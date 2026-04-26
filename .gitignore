@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Generated when TypeScript project references emit config files.
+tailwind.config.js
+tailwind.config.d.ts
+vite.config.js
+vite.config.d.ts

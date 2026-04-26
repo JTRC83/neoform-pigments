@@ -1,0 +1,246 @@
+import type {
+  CompositionPreset,
+  FormPreset,
+  PigmentSwatch,
+  SavedComposition,
+  TexturePreset
+} from "./library";
+
+export type EditorTool =
+  | "select"
+  | "pan"
+  | "rectangle"
+  | "ellipse"
+  | "triangle"
+  | "diamond"
+  | "pentagon"
+  | "hexagon"
+  | "straightLine"
+  | "curveLine"
+  | "waveLine"
+  | "text"
+  | "pencilStroke"
+  | "nibStroke"
+  | "markerStroke"
+  | "chainsawCut"
+  | "lawnMower";
+
+export type CanvasObjectType =
+  | "rectangle"
+  | "ellipse"
+  | "triangle"
+  | "diamond"
+  | "pentagon"
+  | "hexagon"
+  | "straightLine"
+  | "curveLine"
+  | "waveLine"
+  | "pill"
+  | "semicircle"
+  | "quarterCircle"
+  | "starburst"
+  | "scallop"
+  | "drop"
+  | "petalGrid"
+  | "circleCluster"
+  | "crossBurst"
+  | "semicircleStack"
+  | "triangleGrid"
+  | "shield"
+  | "crescent"
+  | "pacman"
+  | "arch"
+  | "asterisk"
+  | "cornerPinwheel"
+  | "quarterRings"
+  | "portal"
+  | "petalBurst"
+  | "eye"
+  | "boltClassic"
+  | "boltSharp"
+  | "boltStep"
+  | "text"
+  | "pencilStroke"
+  | "nibStroke"
+  | "markerStroke";
+
+export type CanvasObjectSummary = {
+  id: string;
+  artboardId: string;
+  type: CanvasObjectType;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+};
+
+export type CanvasSelectionRequest = {
+  objectId: string | null;
+  requestId: number;
+};
+
+export type BlendMode =
+  | "source-over"
+  | "multiply"
+  | "screen"
+  | "overlay"
+  | "darken"
+  | "lighten"
+  | "color-burn"
+  | "difference"
+  | "exclusion";
+
+export type ShadowPreset = "none" | "hard" | "soft" | "long";
+
+export type CanvasCursorStyle =
+  | "auto"
+  | "target"
+  | "finger"
+  | "rocket"
+  | "paperPlane"
+  | "tapHand"
+  | "pencil";
+
+export type CanvasFinishSettings = {
+  filmGrainEnabled: boolean;
+  filmGrainAmount: number;
+  filmGrainRoughness: number;
+};
+
+export type ColorMode = "light" | "standard" | "dark";
+
+export type TextFontFamily =
+  | "Space Grotesk"
+  | "Archivo Black"
+  | "Libre Baskerville"
+  | "IBM Plex Mono"
+  | "Permanent Marker";
+
+export type LayerActionType =
+  | "delete"
+  | "toggle-visibility"
+  | "toggle-lock"
+  | "move-up"
+  | "move-down"
+  | "rename";
+
+export type LayerActionRequest = {
+  objectId: string;
+  action: LayerActionType;
+  requestId: number;
+};
+
+export type LibraryActionRequest =
+  | {
+      action: "add-form";
+      form: FormPreset;
+      requestId: number;
+    }
+  | {
+      action: "apply-pigment";
+      pigment: PigmentSwatch;
+      requestId: number;
+    }
+  | {
+      action: "apply-texture";
+      texture: TexturePreset;
+      requestId: number;
+    }
+  | {
+      action: "add-composition";
+      composition: CompositionPreset;
+      requestId: number;
+    };
+
+export type CompositionSaveRequest = {
+  requestId: number;
+};
+
+export type ExportRequest = {
+  format: "png" | "svg" | "all-png";
+  requestId: number;
+};
+
+export type ProjectPersistenceRequest = {
+  requestId: number;
+};
+
+export type ProjectImportRequest = {
+  project: SavedProject;
+  requestId: number;
+};
+
+export type EditorHistoryRequest = {
+  action: "undo" | "redo";
+  requestId: number;
+};
+
+export type CanvasViewportRequest = {
+  action: "zoom-in" | "zoom-out" | "fit" | "center";
+  requestId: number;
+};
+
+export type SelectedObjectProperties = {
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  opacity: number;
+  blendMode: BlendMode;
+  shadowPreset: ShadowPreset;
+  shadeLevel: number;
+  lineCurvature: number;
+  lineStartWidth: number;
+  lineEndWidth: number;
+  fontFamily: TextFontFamily;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type PropertyUpdateRequest = {
+  properties: Partial<SelectedObjectProperties>;
+  requestId: number;
+};
+
+export type CanvasViewSettings = {
+  customGuides: CanvasGuide[];
+  showGrid: boolean;
+  showGoldenRatio: boolean;
+};
+
+export type CanvasGuide = {
+  id: string;
+  orientation: "vertical" | "horizontal";
+  position: number;
+};
+
+export type CanvasOrientation = "landscape" | "portrait";
+
+export type CanvasFormat = {
+  id: string;
+  label: string;
+  width: number;
+  height: number;
+};
+
+export type Artboard = {
+  id: string;
+  name: string;
+  formatId: string;
+  orientation: CanvasOrientation;
+  width: number;
+  height: number;
+};
+
+export type SavedProject = {
+  version: 1;
+  projectName: string;
+  artboards: Artboard[];
+  activeArtboardId: string;
+  canvasSnapshots: Record<string, string>;
+  canvasObjects: CanvasObjectSummary[];
+  finishSettings?: CanvasFinishSettings;
+  userCompositions?: SavedComposition[];
+  viewSettings: CanvasViewSettings;
+  savedAt: string;
+};
