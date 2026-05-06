@@ -3,8 +3,13 @@ import {
   MousePointer2,
   Type
 } from "lucide-react";
+import { useState } from "react";
 import { useEditorStore } from "../store/editorStore";
-import type { EditorTool } from "../types/editor";
+import type {
+  CanvasFinishSettings,
+  EditorTool,
+  GradientToolDirection
+} from "../types/editor";
 import { clsx } from "../utils/clsx";
 
 type ToolbarTool = {
@@ -41,17 +46,63 @@ const tools: ToolbarTool[] = [
   { id: "pencilStroke", label: "Pencil" },
   { id: "nibStroke", label: "Nib" },
   { id: "markerStroke", label: "Marker" },
+  { id: "gradientTool", label: "Gradient" },
   { id: "chainsawCut", label: "Chainsaw Cut" },
   { id: "lawnMower", label: "Remove BG" }
 ];
 
+const grainFinishPresets: Array<
+  Pick<CanvasFinishSettings, "filmGrainAmount" | "filmGrainRoughness"> & {
+    label: string;
+  }
+> = [
+  { label: "Soft", filmGrainAmount: 0.28, filmGrainRoughness: 0.35 },
+  { label: "Press", filmGrainAmount: 0.46, filmGrainRoughness: 0.58 },
+  { label: "Grit", filmGrainAmount: 0.68, filmGrainRoughness: 0.82 }
+];
+
+const gradientDirections: Array<{
+  id: GradientToolDirection;
+  label: string;
+}> = [
+  { id: "tl-br", label: "↘" },
+  { id: "tr-bl", label: "↙" },
+  { id: "left-right", label: "→" },
+  { id: "right-left", label: "←" },
+  { id: "top-bottom", label: "↓" },
+  { id: "bottom-top", label: "↑" }
+];
+
 export function LeftToolbar() {
+  const [isGrainPanelOpen, setIsGrainPanelOpen] = useState(false);
   const activeTool = useEditorStore((state) => state.activeTool);
+  const finishSettings = useEditorStore((state) => state.finishSettings);
+  const gradientToolSettings = useEditorStore((state) => state.gradientToolSettings);
   const setActiveTool = useEditorStore((state) => state.setActiveTool);
+  const setFinishSettings = useEditorStore((state) => state.setFinishSettings);
+  const setGradientToolSettings = useEditorStore(
+    (state) => state.setGradientToolSettings
+  );
 
   return (
-    <aside className="flex flex-col items-center gap-2 border-r-2 border-ink bg-bone py-2">
-      {tools.map((tool) => {
+    <aside className="relative flex flex-col items-center gap-2 border-r-2 border-ink bg-bone py-2">
+      <button
+        type="button"
+        onClick={() => setIsGrainPanelOpen((isOpen) => !isOpen)}
+        className={clsx(
+          "grid h-9 w-9 place-items-center border-2 border-ink text-ink shadow-brutal-sm transition hover:-translate-y-0.5",
+          finishSettings.filmGrainEnabled
+            ? "bg-punch text-paper ring-2 ring-inset ring-ink"
+            : "bg-paper hover:bg-pollen"
+        )}
+        title="Analog film grain finish"
+        aria-label="Analog film grain finish"
+        data-tour="film-grain"
+      >
+        <ToolbarGrainIcon />
+      </button>
+      <div className="flex flex-col items-center gap-2">
+        {tools.map((tool) => {
         const Icon = tool.icon;
         const isShapeTool = outlineShapeTools.has(tool.id);
         const isDrawingTool =
@@ -70,7 +121,7 @@ export function LeftToolbar() {
               "grid h-9 w-9 place-items-center border-2 border-ink text-ink shadow-brutal-sm transition hover:-translate-y-0.5",
               activeTool === tool.id
                 ? "bg-oxide text-paper ring-2 ring-inset ring-ink"
-                : "bg-paper hover:bg-white"
+                : "bg-paper hover:bg-pollen"
             )}
             title={tool.label}
             aria-label={tool.label}
@@ -79,6 +130,8 @@ export function LeftToolbar() {
               <ToolbarShapeIcon type={tool.id} />
             ) : isDrawingTool ? (
               <ToolbarDrawIcon type={tool.id} />
+            ) : tool.id === "gradientTool" ? (
+              <ToolbarGradientIcon />
             ) : tool.id === "lawnMower" ? (
               <ToolbarLawnMowerIcon />
             ) : Icon ? (
@@ -86,12 +139,199 @@ export function LeftToolbar() {
             ) : null}
           </button>
         );
-      })}
+        })}
+      </div>
+      {activeTool === "gradientTool" ? (
+        <div
+          className="absolute left-full top-28 z-40 ml-2 w-56 border-2 border-ink bg-mineral p-2 text-ink shadow-brutal"
+          data-tour="gradient-tool-panel"
+        >
+          <div className="mb-2 border-2 border-ink bg-paper px-2 py-1">
+            <span className="block text-[10px] font-black uppercase">
+              Gradient tool
+            </span>
+            <span className="block text-[8px] font-black uppercase text-ink/65">
+              Click applies. Drag over a figure to set direction.
+            </span>
+          </div>
+          <label className="mb-2 block border-2 border-ink bg-paper px-2 py-1 text-[10px] font-black uppercase">
+            Intensity {Math.round(gradientToolSettings.intensity * 100)}%
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={gradientToolSettings.intensity}
+              onChange={(event) =>
+                setGradientToolSettings({
+                  intensity: Number(event.currentTarget.value)
+                })
+              }
+              className="mt-1 h-3 w-full accent-[rgb(var(--color-oxide))]"
+            />
+          </label>
+          <div className="grid grid-cols-3 gap-1">
+            {gradientDirections.map((direction) => (
+              <button
+                key={direction.id}
+                type="button"
+                onClick={() => setGradientToolSettings({ direction: direction.id })}
+                className={clsx(
+                  "h-8 border-2 border-ink text-sm font-black shadow-brutal-sm transition hover:-translate-y-0.5",
+                  gradientToolSettings.direction === direction.id
+                    ? "bg-oxide text-paper"
+                    : "bg-bone text-ink"
+                )}
+                title={`Gradient direction ${direction.id}`}
+              >
+                {direction.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 border-2 border-ink bg-bone px-2 py-1 text-[9px] font-black uppercase leading-tight">
+            Works on the selected object. Drag direction overrides these arrows.
+          </p>
+        </div>
+      ) : null}
+      {isGrainPanelOpen ? (
+        <div className="absolute left-full top-2 z-40 ml-2 w-56 border-2 border-ink bg-pollen p-2 text-ink shadow-brutal">
+	          <div className="mb-2 flex items-center justify-between gap-2 border-2 border-ink bg-paper px-2 py-1">
+            <span className="text-[10px] font-black uppercase">Film grain</span>
+            <span className="border border-ink bg-bone px-1 text-[7px] font-black uppercase text-ink">
+              Raster export
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setFinishSettings({
+                  filmGrainEnabled: !finishSettings.filmGrainEnabled
+                })
+              }
+              className={clsx(
+                "border-2 border-ink px-2 py-0.5 text-[10px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5",
+                finishSettings.filmGrainEnabled
+                  ? "bg-ink text-paper"
+                  : "bg-bone text-ink"
+              )}
+            >
+	              {finishSettings.filmGrainEnabled ? "On" : "Off"}
+	            </button>
+	          </div>
+	          <div className="mb-2 grid grid-cols-3 gap-1">
+	            {grainFinishPresets.map((preset) => (
+	              <button
+	                key={preset.label}
+	                type="button"
+	                onClick={() =>
+	                  setFinishSettings({
+	                    filmGrainAmount: preset.filmGrainAmount,
+	                    filmGrainEnabled: true,
+	                    filmGrainRoughness: preset.filmGrainRoughness
+	                  })
+	                }
+	                className="border-2 border-ink bg-bone px-1 py-1 text-[9px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 hover:bg-paper"
+	              >
+	                {preset.label}
+	              </button>
+	            ))}
+	          </div>
+	          <label className="mb-2 block border-2 border-ink bg-paper px-2 py-1 text-[10px] font-black uppercase">
+            Size {Math.round(finishSettings.filmGrainRoughness * 100)}%
+            <input
+              type="range"
+              min={0.15}
+              max={1}
+              step={0.05}
+              value={finishSettings.filmGrainRoughness}
+              onChange={(event) =>
+                setFinishSettings({
+                  filmGrainRoughness: Number(event.currentTarget.value)
+                })
+              }
+              className="mt-1 h-3 w-full accent-[rgb(var(--color-ink))]"
+            />
+          </label>
+          <label className="block border-2 border-ink bg-paper px-2 py-1 text-[10px] font-black uppercase">
+            Amount {Math.round(finishSettings.filmGrainAmount * 100)}%
+            <input
+              type="range"
+              min={0.05}
+              max={1}
+              step={0.05}
+              value={finishSettings.filmGrainAmount}
+              onChange={(event) =>
+                setFinishSettings({
+                  filmGrainAmount: Number(event.currentTarget.value)
+                })
+              }
+              className="mt-1 h-3 w-full accent-[rgb(var(--color-ink))]"
+            />
+          </label>
+          <p className="mt-2 border-2 border-ink bg-bone px-2 py-1 text-[9px] font-black uppercase leading-tight">
+            Raster finish for final JPG/package exports. Vector patterns stay in Textures.
+          </p>
+        </div>
+      ) : null}
     </aside>
   );
 }
 
+function ToolbarGrainIcon() {
+  return (
+    <svg aria-hidden="true" className="h-6 w-6" viewBox="0 0 24 24">
+      <circle cx="7" cy="7" r="1.6" fill="currentColor" />
+      <circle cx="15" cy="6" r="1" fill="currentColor" />
+      <circle cx="18" cy="12" r="1.4" fill="currentColor" />
+      <circle cx="10" cy="15" r="1.1" fill="currentColor" />
+      <circle cx="5" cy="18" r="0.9" fill="currentColor" />
+      <circle cx="16" cy="19" r="1.2" fill="currentColor" />
+      <path
+        d="M4 11.5C8.8 9.5 14.5 14.4 20 10.8"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.6"
+      />
+    </svg>
+  );
+}
+
+function ToolbarGradientIcon() {
+  return (
+    <svg aria-hidden="true" className="h-6 w-6" viewBox="0 0 24 24">
+      <defs>
+        <linearGradient id="toolbar-gradient-icon" x1="4" x2="20" y1="4" y2="20">
+          <stop offset="0" stopColor="currentColor" stopOpacity="0.1" />
+          <stop offset="0.48" stopColor="currentColor" stopOpacity="0.65" />
+          <stop offset="1" stopColor="currentColor" />
+        </linearGradient>
+      </defs>
+      <rect
+        x="4"
+        y="4"
+        width="16"
+        height="16"
+        fill="url(#toolbar-gradient-icon)"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M7 17L17 7M13 7H17V11"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="square"
+        strokeLinejoin="miter"
+        strokeWidth="1.7"
+      />
+    </svg>
+  );
+}
+
 function getToolTourId(toolId: EditorTool) {
+  if (toolId === "gradientTool") {
+    return "gradient-tool";
+  }
+
   if (toolId === "chainsawCut") {
     return "chainsaw-cut-tool";
   }

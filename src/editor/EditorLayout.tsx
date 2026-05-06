@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { CanvasEditor } from "../canvas/CanvasEditor";
 import { TopBar } from "../components/TopBar";
 import { LibrariesPanel } from "../libraries/LibrariesPanel";
+import { VisualAssetsModal } from "../libraries/VisualAssetsModal";
 import { LeftToolbar } from "./LeftToolbar";
 import { RightPanel } from "./RightPanel";
 
@@ -11,6 +12,7 @@ const resizeTabHeight = 18;
 export function EditorLayout() {
   const sidebarRef = useRef<HTMLElement | null>(null);
   const [librariesHeight, setLibrariesHeight] = useState(getDefaultLibrariesHeight);
+  const [isVisualAssetsModalOpen, setIsVisualAssetsModalOpen] = useState(false);
 
   const handleSidebarResizeStart = (
     event: ReactPointerEvent<HTMLButtonElement>
@@ -40,7 +42,7 @@ export function EditorLayout() {
 
   return (
     <main className="grid h-screen grid-rows-[48px_1fr] bg-paper text-ink">
-      <TopBar />
+      <TopBar onOpenVisualAssets={() => setIsVisualAssetsModalOpen(true)} />
       <section className="grid min-h-0 grid-cols-[56px_minmax(0,1fr)_320px] border-t-2 border-ink">
         <LeftToolbar />
         <CanvasEditor />
@@ -66,6 +68,10 @@ export function EditorLayout() {
           <LibrariesPanel />
         </aside>
       </section>
+      <VisualAssetsModal
+        isOpen={isVisualAssetsModalOpen}
+        onClose={() => setIsVisualAssetsModalOpen(false)}
+      />
     </main>
   );
 }

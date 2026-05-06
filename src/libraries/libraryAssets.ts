@@ -68,7 +68,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#F4E8C8",
     foreground: "#7A6048",
     accent: "#C06830",
-    kind: "shadeGradient"
+    kind: "shadeGradient",
+    group: "gradient"
   },
   {
     id: "chaos-mesh",
@@ -76,7 +77,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#E8E0C0",
     foreground: "#F06000",
     accent: "#90A0B8",
-    kind: "meshGradient"
+    kind: "meshGradient",
+    group: "gradient"
   },
   {
     id: "oxide-mesh",
@@ -84,7 +86,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#E8E0C0",
     foreground: "#C06830",
     accent: "#F0B800",
-    kind: "meshGradient"
+    kind: "meshGradient",
+    group: "gradient"
   },
   {
     id: "klein-mesh",
@@ -92,7 +95,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#002FA7",
     foreground: "#0068C0",
     accent: "#E8E0C0",
-    kind: "meshGradient"
+    kind: "meshGradient",
+    group: "gradient"
   },
   {
     id: "mineral-mesh",
@@ -100,7 +104,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#90A0B8",
     foreground: "#E8E0C0",
     accent: "#303030",
-    kind: "meshGradient"
+    kind: "meshGradient",
+    group: "gradient"
   },
   {
     id: "rose-mesh",
@@ -108,7 +113,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#F89898",
     foreground: "#EC4A8A",
     accent: "#E8E0C0",
-    kind: "meshGradient"
+    kind: "meshGradient",
+    group: "gradient"
   },
   {
     id: "sun-gradient",
@@ -116,7 +122,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#F0B800",
     foreground: "#C06830",
     accent: "#E8E0C0",
-    kind: "linearGradient"
+    kind: "linearGradient",
+    group: "gradient"
   },
   {
     id: "klein-radial",
@@ -124,14 +131,17 @@ export const texturePresets: TexturePreset[] = [
     background: "#002FA7",
     foreground: "#0068C0",
     accent: "#E8E0C0",
-    kind: "radialGradient"
+    kind: "radialGradient",
+    group: "gradient"
   },
   {
     id: "cream-ink-grid",
     label: "Cream Grid",
     background: "#E8E0C0",
     foreground: "#303030",
-    kind: "grid"
+    kind: "grid",
+    group: "utility",
+    renderMode: "vector"
   },
   {
     id: "micro-grid",
@@ -139,6 +149,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#E8E0C0",
     foreground: "#101010",
     kind: "grid",
+    group: "utility",
+    renderMode: "vector",
     scale: 16
   },
   {
@@ -146,7 +158,9 @@ export const texturePresets: TexturePreset[] = [
     label: "Ink Stripes",
     background: "#E8E0C0",
     foreground: "#000000",
-    kind: "stripes"
+    kind: "stripes",
+    group: "utility",
+    renderMode: "vector"
   },
   {
     id: "fine-cream-lines",
@@ -154,6 +168,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#E8E0C0",
     foreground: "#303030",
     kind: "fineLines",
+    group: "utility",
+    renderMode: "vector",
     scale: 20
   },
   {
@@ -161,14 +177,18 @@ export const texturePresets: TexturePreset[] = [
     label: "Sun Dots",
     background: "#F0B800",
     foreground: "#303030",
-    kind: "dots"
+    kind: "dots",
+    group: "popArt",
+    renderMode: "vector"
   },
   {
     id: "dust-grid",
     label: "Dust Grid",
     background: "#90A0B8",
     foreground: "#303030",
-    kind: "grid"
+    kind: "grid",
+    group: "utility",
+    renderMode: "vector"
   },
   {
     id: "blue-diagonal-grid",
@@ -176,6 +196,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#90A0B8",
     foreground: "#303030",
     kind: "diagonalGrid",
+    group: "utility",
+    renderMode: "vector",
     scale: 34
   },
   {
@@ -183,7 +205,9 @@ export const texturePresets: TexturePreset[] = [
     label: "Klein Dots",
     background: "#002FA7",
     foreground: "#E8E0C0",
-    kind: "dots"
+    kind: "dots",
+    group: "popArt",
+    renderMode: "vector"
   },
   {
     id: "klein-rings",
@@ -191,6 +215,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#002FA7",
     foreground: "#E8E0C0",
     kind: "rings",
+    group: "popArt",
+    renderMode: "vector",
     scale: 38
   },
   {
@@ -198,14 +224,18 @@ export const texturePresets: TexturePreset[] = [
     label: "Green Check",
     background: "#608848",
     foreground: "#303030",
-    kind: "checker"
+    kind: "checker",
+    group: "utility",
+    renderMode: "vector"
   },
   {
     id: "orange-hatch",
     label: "Orange Hatch",
     background: "#C06830",
     foreground: "#303030",
-    kind: "crosshatch"
+    kind: "crosshatch",
+    group: "serigraphy",
+    renderMode: "vector"
   },
   {
     id: "orange-zigzag",
@@ -213,6 +243,8 @@ export const texturePresets: TexturePreset[] = [
     background: "#C06830",
     foreground: "#303030",
     kind: "zigzag",
+    group: "bauhaus",
+    renderMode: "vector",
     scale: 32
   },
   {
@@ -220,14 +252,185 @@ export const texturePresets: TexturePreset[] = [
     label: "Red Stripes",
     background: "#C03030",
     foreground: "#E8E0C0",
-    kind: "stripes"
+    kind: "stripes",
+    group: "serigraphy",
+    renderMode: "vector"
   },
   {
     id: "ochre-check",
     label: "Ochre Check",
     background: "#E0C070",
     foreground: "#303030",
-    kind: "checker"
+    kind: "checker",
+    group: "utility",
+    renderMode: "vector"
+  },
+  {
+    id: "turquoise-mesh",
+    label: "Turquoise Mesh",
+    background: "#03DAC5",
+    foreground: "#3700B3",
+    accent: "#BB86FC",
+    kind: "meshGradient",
+    group: "gradient"
+  },
+  {
+    id: "carbon-mesh",
+    label: "Carbon Mesh",
+    background: "#121212",
+    foreground: "#CF6679",
+    accent: "#03DAC5",
+    kind: "meshGradient",
+    group: "gradient"
+  },
+  {
+    id: "bauhaus-register",
+    label: "Register Lines",
+    background: "#F4E8C8",
+    foreground: "#101010",
+    kind: "fineLines",
+    group: "serigraphy",
+    renderMode: "vector",
+    scale: 12
+  },
+  {
+    id: "vector-stipple",
+    label: "Vector Stipple",
+    background: "#F4E8C8",
+    foreground: "#303030",
+    kind: "halftone",
+    group: "serigraphy",
+    renderMode: "vector",
+    scale: 18
+  },
+  {
+    id: "rosette-screen",
+    label: "Print Rosette",
+    background: "#F4E8C8",
+    foreground: "#C06830",
+    accent: "#002FA7",
+    kind: "dots",
+    group: "popArt",
+    renderMode: "vector",
+    scale: 22
+  },
+  {
+    id: "fiber-hatch",
+    label: "Fiber Hatch",
+    background: "#E8E0C0",
+    foreground: "#303030",
+    kind: "crosshatch",
+    group: "serigraphy",
+    renderMode: "vector",
+    scale: 18
+  },
+  {
+    id: "offset-screen",
+    label: "Offset Lattice",
+    background: "#90A0B8",
+    foreground: "#E8E0C0",
+    kind: "diagonalGrid",
+    group: "serigraphy",
+    renderMode: "vector",
+    scale: 22
+  },
+  {
+    id: "bauhaus-block-print",
+    label: "Bauhaus Blocks",
+    background: "#F4E8C8",
+    foreground: "#E03028",
+    accent: "#002FA7",
+    kind: "bauhausBlocks",
+    group: "bauhaus",
+    renderMode: "vector",
+    scale: 72
+  },
+  {
+    id: "bauhaus-weave-primary",
+    label: "Bauhaus Weave",
+    background: "#F4E8C8",
+    foreground: "#F06000",
+    accent: "#008850",
+    kind: "bauhausWeave",
+    group: "bauhaus",
+    renderMode: "vector",
+    scale: 84
+  },
+  {
+    id: "bauhaus-arch-grid",
+    label: "Arch Grid",
+    background: "#E8E0C0",
+    foreground: "#002FA7",
+    accent: "#F0B800",
+    kind: "bauhausWeave",
+    group: "bauhaus",
+    renderMode: "vector",
+    scale: 96
+  },
+  {
+    id: "pop-benday-red",
+    label: "Pop Benday",
+    background: "#F4E8C8",
+    foreground: "#E03028",
+    accent: "#F0B800",
+    kind: "bendayDots",
+    group: "popArt",
+    renderMode: "vector",
+    scale: 48
+  },
+  {
+    id: "pop-halftone-klein",
+    label: "Pop Halftone",
+    background: "#F4E8C8",
+    foreground: "#002FA7",
+    accent: "#E03028",
+    kind: "popHalftone",
+    group: "popArt",
+    renderMode: "vector",
+    scale: 74
+  },
+  {
+    id: "serigraphy-bars-klein",
+    label: "Serigraphy Bars",
+    background: "#002FA7",
+    foreground: "#E8E0C0",
+    accent: "#F06000",
+    kind: "serigraphyBars",
+    group: "serigraphy",
+    renderMode: "vector",
+    scale: 64
+  },
+  {
+    id: "screenprint-offset-red",
+    label: "Offset Screen",
+    background: "#F4E8C8",
+    foreground: "#E03028",
+    accent: "#002FA7",
+    kind: "serigraphyScreen",
+    group: "serigraphy",
+    renderMode: "vector",
+    scale: 78
+  },
+  {
+    id: "op-art-waves-ink",
+    label: "Op Waves",
+    background: "#E8E0C0",
+    foreground: "#101010",
+    kind: "opArtWaves",
+    group: "popArt",
+    renderMode: "vector",
+    scale: 72
+  },
+  {
+    id: "pop-burst-turquoise",
+    label: "Pop Burst",
+    background: "#03DAC5",
+    foreground: "#3700B3",
+    accent: "#BB86FC",
+    kind: "popBurst",
+    group: "popArt",
+    renderMode: "vector",
+    scale: 80
   }
 ];
 

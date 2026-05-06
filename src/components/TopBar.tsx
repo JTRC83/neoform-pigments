@@ -1,11 +1,9 @@
 import {
-  Download,
   FileDown,
   FileImage,
-  FileStack,
-  FileType,
   FileUp,
   FolderOpen,
+  Images,
   Palette,
   Redo2,
   Save,
@@ -24,15 +22,17 @@ const colorModeLabels: Record<ColorMode, string> = {
   standard: "Std"
 };
 
-export function TopBar() {
+type TopBarProps = {
+  onOpenVisualAssets: () => void;
+};
+
+export function TopBar({ onOpenVisualAssets }: TopBarProps) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const colorMode = useEditorStore((state) => state.colorMode);
   const setColorMode = useEditorStore((state) => state.setColorMode);
   const requestRedo = useEditorStore((state) => state.requestRedo);
   const requestUndo = useEditorStore((state) => state.requestUndo);
-  const requestExportAllPng = useEditorStore((state) => state.requestExportAllPng);
-  const requestExportPng = useEditorStore((state) => state.requestExportPng);
-  const requestExportSvg = useEditorStore((state) => state.requestExportSvg);
+  const requestExportJpeg = useEditorStore((state) => state.requestExportJpeg);
   const requestExportProjectJson = useEditorStore(
     (state) => state.requestExportProjectJson
   );
@@ -162,28 +162,23 @@ export function TopBar() {
         </button>
         <button
           type="button"
-          onClick={requestExportPng}
-          className="ml-1 grid h-8 w-8 place-items-center border-2 border-ink bg-mineral text-ink shadow-brutal-sm transition hover:-translate-y-0.5"
-          title="Export active PNG"
+          onClick={onOpenVisualAssets}
+          className="flex h-8 items-center gap-1 border-2 border-ink bg-paper px-2 text-[10px] font-black uppercase text-ink shadow-brutal-sm transition hover:-translate-y-0.5"
+          data-tour="visual-library-button"
+          title="Abrir biblioteca visual"
+        >
+          <Images size={13} />
+          Library
+        </button>
+        <button
+          type="button"
+          onClick={requestExportJpeg}
+          className="ml-1 flex h-8 items-center gap-1 border-2 border-ink bg-mineral px-3 text-[10px] font-black uppercase text-ink shadow-brutal-sm transition hover:-translate-y-0.5"
+          data-tour="jpg-srgb-export"
+          title="Export active canvas as JPG/JPEG in sRGB using current size, PPP and JPG quality"
         >
           <FileImage size={15} />
-        </button>
-        <button
-          type="button"
-          onClick={requestExportSvg}
-          className="grid h-8 w-8 place-items-center border-2 border-ink bg-mineral text-ink shadow-brutal-sm transition hover:-translate-y-0.5"
-          title="Export active SVG"
-        >
-          <FileType size={15} />
-        </button>
-        <button
-          type="button"
-          onClick={requestExportAllPng}
-          className="flex h-8 items-center gap-1 border-2 border-ink bg-mineral px-2 text-xs font-black uppercase text-ink shadow-brutal-sm transition hover:-translate-y-0.5"
-          title="Export all canvases as PNG"
-        >
-          <Download size={13} />
-          <FileStack size={13} />
+          JPG sRGB
         </button>
       </nav>
     </header>

@@ -22,6 +22,7 @@ export type EditorTool =
   | "pencilStroke"
   | "nibStroke"
   | "markerStroke"
+  | "gradientTool"
   | "chainsawCut"
   | "lawnMower";
 
@@ -59,10 +60,13 @@ export type CanvasObjectType =
   | "boltClassic"
   | "boltSharp"
   | "boltStep"
+  | "image"
   | "text"
+  | "textOutline"
   | "pencilStroke"
   | "nibStroke"
-  | "markerStroke";
+  | "markerStroke"
+  | "group";
 
 export type CanvasObjectSummary = {
   id: string;
@@ -75,6 +79,7 @@ export type CanvasObjectSummary = {
 
 export type CanvasSelectionRequest = {
   objectId: string | null;
+  objectIds?: string[];
   requestId: number;
 };
 
@@ -104,6 +109,49 @@ export type CanvasFinishSettings = {
   filmGrainEnabled: boolean;
   filmGrainAmount: number;
   filmGrainRoughness: number;
+  colorAdjustments: ColorAdjustmentSettings;
+};
+
+export type ColorAdjustmentSettings = {
+  exposure: number;
+  contrast: number;
+  saturation: number;
+  temperature: number;
+  channelRed: number;
+  channelGreen: number;
+  channelBlue: number;
+};
+
+export type GradientToolDirection =
+  | "tl-br"
+  | "tr-bl"
+  | "left-right"
+  | "right-left"
+  | "top-bottom"
+  | "bottom-top";
+
+export type GradientToolSettings = {
+  direction: GradientToolDirection;
+  intensity: number;
+};
+
+export type PrintPresetId =
+  | "screen"
+  | "digital-proof"
+  | "a4-print"
+  | "a3-poster"
+  | "gallery-print"
+  | "riso-proof"
+  | "social-square"
+  | "custom";
+
+export type ProfessionalExportSettings = {
+  cropMarksEnabled: boolean;
+  dpi: number;
+  bleedMm: number;
+  jpegQuality: number;
+  safeMarginMm: number;
+  presetId: PrintPresetId;
 };
 
 export type ColorMode = "light" | "standard" | "dark";
@@ -117,6 +165,9 @@ export type TextFontFamily =
 
 export type LayerActionType =
   | "delete"
+  | "duplicate"
+  | "group"
+  | "ungroup"
   | "toggle-visibility"
   | "toggle-lock"
   | "move-up"
@@ -124,8 +175,9 @@ export type LayerActionType =
   | "rename";
 
 export type LayerActionRequest = {
-  objectId: string;
   action: LayerActionType;
+  objectId?: string;
+  objectIds: string[];
   requestId: number;
 };
 
@@ -149,14 +201,47 @@ export type LibraryActionRequest =
       action: "add-composition";
       composition: CompositionPreset;
       requestId: number;
+    }
+  | {
+      action: "add-visual-asset";
+      asset: VisualAsset;
+      requestId: number;
     };
+
+export type VisualAssetCategory =
+  | "compositions"
+  | "pigments"
+  | "pigment-mixes"
+  | "color-palettes"
+  | "textures"
+  | "final-works";
+
+export type VisualAsset = {
+  id: string;
+  category: VisualAssetCategory;
+  createdAt: string;
+  dataUrl: string;
+  kind?: "image" | "palette" | "mix";
+  mimeType: string;
+  name: string;
+  palette?: string[];
+  sourceAssetId?: string;
+};
 
 export type CompositionSaveRequest = {
   requestId: number;
+  targetId?: string;
 };
 
 export type ExportRequest = {
-  format: "png" | "svg" | "all-png";
+  format:
+    | "png"
+    | "jpeg"
+    | "svg"
+    | "all-png"
+    | "all-jpeg"
+    | "pdf"
+    | "package";
   requestId: number;
 };
 
@@ -187,6 +272,7 @@ export type SelectedObjectProperties = {
   blendMode: BlendMode;
   shadowPreset: ShadowPreset;
   shadeLevel: number;
+  colorAdjustments: ColorAdjustmentSettings;
   lineCurvature: number;
   lineStartWidth: number;
   lineEndWidth: number;
@@ -199,6 +285,11 @@ export type SelectedObjectProperties = {
 
 export type PropertyUpdateRequest = {
   properties: Partial<SelectedObjectProperties>;
+  requestId: number;
+};
+
+export type TextOutlineRequest = {
+  objectId: string;
   requestId: number;
 };
 
@@ -221,6 +312,8 @@ export type CanvasFormat = {
   label: string;
   width: number;
   height: number;
+  widthMm?: number;
+  heightMm?: number;
 };
 
 export type Artboard = {
@@ -239,7 +332,9 @@ export type SavedProject = {
   activeArtboardId: string;
   canvasSnapshots: Record<string, string>;
   canvasObjects: CanvasObjectSummary[];
+  visualAssets?: VisualAsset[];
   finishSettings?: CanvasFinishSettings;
+  exportSettings?: ProfessionalExportSettings;
   userCompositions?: SavedComposition[];
   viewSettings: CanvasViewSettings;
   savedAt: string;

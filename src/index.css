@@ -124,11 +124,11 @@ button {
 }
 
 .neoform-motion-cursor-shell {
-  transition:
-    left 70ms linear,
-    top 70ms linear,
-    transform 95ms ease-out;
-  will-change: left, top, transform;
+  left: 0;
+  top: 0;
+  contain: layout;
+  transition: transform 45ms linear;
+  will-change: transform;
 }
 
 .neoform-motion-cursor {
@@ -173,13 +173,13 @@ button {
 
 .neoform-tattoo-cursor {
   position: relative;
-  width: 84px;
-  height: 104px;
+  width: 74px;
+  height: 92px;
 }
 
 .neoform-tattoo-cursor-image {
   display: block;
-  width: 84px;
+  width: 74px;
   max-width: none;
 }
 

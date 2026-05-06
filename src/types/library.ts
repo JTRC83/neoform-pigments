@@ -38,6 +38,14 @@ export type TexturePreset = {
     | "rings"
     | "zigzag"
     | "confetti"
+    | "bauhausBlocks"
+    | "bauhausWeave"
+    | "bendayDots"
+    | "popHalftone"
+    | "serigraphyBars"
+    | "serigraphyScreen"
+    | "opArtWaves"
+    | "popBurst"
     | "shadeGradient"
     | "linearGradient"
     | "radialGradient"
@@ -47,6 +55,8 @@ export type TexturePreset = {
     | "noise"
     | "speckle"
     | "paper";
+  group?: "gradient" | "bauhaus" | "popArt" | "serigraphy" | "utility" | "rasterFinish";
+  renderMode?: "vector" | "raster-export";
   scale?: number;
   intensity?: number;
 };

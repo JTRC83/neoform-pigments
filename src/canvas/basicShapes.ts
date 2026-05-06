@@ -83,10 +83,13 @@ const shapeNames: Record<CanvasObjectType, string> = {
   boltClassic: "Classic Bolt",
   boltSharp: "Sym Bolt",
   boltStep: "Step Bolt",
+  image: "Image",
   text: "Text",
+  textOutline: "Text Outline",
   pencilStroke: "Pencil Stroke",
   nibStroke: "Nib Stroke",
-  markerStroke: "Marker Stroke"
+  markerStroke: "Marker Stroke",
+  group: "Group"
 };
 
 export function isShapeTool(

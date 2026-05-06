@@ -9,20 +9,25 @@ import type {
   CanvasFormat,
   CanvasCursorStyle,
   CanvasFinishSettings,
+  ColorAdjustmentSettings,
   ColorMode,
   CompositionSaveRequest,
   CanvasOrientation,
   EditorTool,
   EditorHistoryRequest,
   ExportRequest,
+  GradientToolSettings,
   LayerActionRequest,
   LibraryActionRequest,
   ProjectImportRequest,
   ProjectPersistenceRequest,
+  ProfessionalExportSettings,
   PropertyUpdateRequest,
   SavedProject,
   SelectedObjectProperties,
-  TextFontFamily
+  TextOutlineRequest,
+  TextFontFamily,
+  VisualAsset
 } from "../types/editor";
 import type {
   CompositionPreset,
@@ -31,18 +36,60 @@ import type {
   TexturePreset
 } from "../types/library";
 import type { SavedComposition } from "../types/library";
-import { createArtboard, initialArtboard } from "../canvas/canvasPresets";
+import {
+  canvasFormats,
+  createArtboard,
+  defaultCanvasDpi,
+  getFormatPixels,
+  initialArtboard,
+  maxCanvasDpi,
+  minCanvasDpi
+} from "../canvas/canvasPresets";
+import {
+  deleteVisualAssetFromIndexedDb,
+  loadVisualAssetsFromIndexedDb,
+  replaceVisualAssetsInIndexedDb,
+  saveVisualAssetToIndexedDb
+} from "../libraries/visualAssetStorage";
 import { defaultTextFontFamily } from "../utils/textFonts";
 
 const localProjectKey = "neoform-pigments:project:v1";
 const localCompositionsKey = "neoform-pigments:user-compositions:v1";
 const localCompositionsResetKey = "neoform-pigments:compositions-reset:v1";
 const localColorModeKey = "neoform-pigments:color-mode:v1";
+const localVisualAssetsKey = "neoform-pigments:visual-assets:v1";
 
 const defaultFinishSettings: CanvasFinishSettings = {
+  colorAdjustments: createDefaultColorAdjustments(),
   filmGrainEnabled: false,
   filmGrainAmount: 0.45,
   filmGrainRoughness: 0.6
+};
+
+function createDefaultColorAdjustments(): ColorAdjustmentSettings {
+  return {
+    channelBlue: 1,
+    channelGreen: 1,
+    channelRed: 1,
+    contrast: 0,
+    exposure: 0,
+    saturation: 0,
+    temperature: 0
+  };
+}
+
+const defaultExportSettings: ProfessionalExportSettings = {
+  cropMarksEnabled: false,
+  dpi: defaultCanvasDpi,
+  bleedMm: 0,
+  jpegQuality: 0.95,
+  safeMarginMm: 0,
+  presetId: "screen"
+};
+
+const defaultGradientToolSettings: GradientToolSettings = {
+  direction: "tl-br",
+  intensity: 0.45
 };
 
 type EditorState = {
@@ -53,7 +100,10 @@ type EditorState = {
   canvasSnapshots: Record<string, string>;
   canvasObjects: CanvasObjectSummary[];
   userCompositions: SavedComposition[];
+  visualAssets: VisualAsset[];
+  visualAssetsLoaded: boolean;
   selectedObjectId: string | null;
+  selectedLayerIds: string[];
   selectionRequest: CanvasSelectionRequest | null;
   layerActionRequest: LayerActionRequest | null;
   libraryActionRequest: LibraryActionRequest | null;
@@ -65,37 +115,64 @@ type EditorState = {
   historyRequest: EditorHistoryRequest | null;
   viewportRequest: CanvasViewportRequest | null;
   propertyUpdateRequest: PropertyUpdateRequest | null;
+  textOutlineRequest: TextOutlineRequest | null;
   compositionSaveRequest: CompositionSaveRequest | null;
   selectedObjectProperties: SelectedObjectProperties | null;
   cursorStyle: CanvasCursorStyle;
   colorMode: ColorMode;
   textFontFamily: TextFontFamily;
   finishSettings: CanvasFinishSettings;
+  gradientToolSettings: GradientToolSettings;
+  exportSettings: ProfessionalExportSettings;
   viewSettings: CanvasViewSettings;
   setActiveTool: (tool: EditorTool) => void;
   addCanvasObject: (object: CanvasObjectSummary) => void;
   setSelectedObjectId: (id: string | null) => void;
+  setCanvasSelection: (ids: string[]) => void;
   requestObjectSelection: (id: string | null) => void;
+  requestLayerSelection: (ids: string[]) => void;
   toggleLayerVisibility: (id: string) => void;
+  toggleLayersVisibility: (ids: string[]) => void;
   toggleLayerLock: (id: string) => void;
+  toggleLayersLock: (ids: string[]) => void;
   deleteLayer: (id: string) => void;
+  deleteLayers: (ids: string[]) => void;
+  duplicateLayers: (ids: string[]) => void;
+  groupLayers: (ids: string[]) => void;
+  ungroupLayers: (ids: string[]) => void;
   moveLayer: (id: string, direction: "up" | "down") => void;
+  moveLayers: (ids: string[], direction: "up" | "down") => void;
   renameLayer: (id: string, name: string) => void;
   requestAddLibraryForm: (form: FormPreset) => void;
   requestApplyPigment: (pigment: PigmentSwatch) => void;
   requestApplyTexture: (texture: TexturePreset) => void;
   requestAddComposition: (composition: CompositionPreset) => void;
+  requestAddVisualAssetToCanvas: (asset: VisualAsset) => void;
+  loadVisualAssets: () => Promise<void>;
+  addVisualAsset: (asset: VisualAsset) => void;
+  deleteVisualAsset: (id: string) => void;
   requestSaveSelectionAsComposition: () => void;
+  requestUpdateCompositionFromSelection: (id: string) => void;
   addUserComposition: (composition: SavedComposition) => void;
+  updateUserComposition: (composition: SavedComposition) => void;
+  renameUserComposition: (id: string, label: string) => void;
+  deleteUserComposition: (id: string) => void;
+  moveUserComposition: (id: string, direction: "up" | "down") => void;
+  importUserCompositions: (compositions: SavedComposition[]) => void;
   requestExportPng: () => void;
+  requestExportJpeg: () => void;
   requestExportSvg: () => void;
   requestExportAllPng: () => void;
+  requestExportAllJpeg: () => void;
+  requestExportPdf: () => void;
+  requestExportPackage: () => void;
   requestUndo: () => void;
   requestRedo: () => void;
   requestViewportAction: (action: CanvasViewportRequest["action"]) => void;
   requestSelectedObjectPropertyUpdate: (
     properties: Partial<SelectedObjectProperties>
   ) => void;
+  requestConvertSelectedTextToOutline: (objectId: string) => void;
   setSelectedObjectProperties: (properties: SelectedObjectProperties | null) => void;
   replaceCanvasObjectsForArtboard: (
     artboardId: string,
@@ -116,6 +193,10 @@ type EditorState = {
   removeCanvasGuide: (id: string) => void;
   clearCanvasGuides: () => void;
   addArtboard: (format: CanvasFormat, orientation: CanvasOrientation) => void;
+  updateActiveArtboardFormat: (
+    format: CanvasFormat,
+    orientation: CanvasOrientation
+  ) => void;
   updateActiveArtboardSize: (width: number, height: number) => void;
   setActiveArtboard: (id: string) => void;
   setCanvasSnapshot: (artboardId: string, snapshot: string) => void;
@@ -123,6 +204,8 @@ type EditorState = {
   setColorMode: (colorMode: ColorMode) => void;
   setTextFontFamily: (fontFamily: TextFontFamily) => void;
   setFinishSettings: (settings: Partial<CanvasFinishSettings>) => void;
+  setGradientToolSettings: (settings: Partial<GradientToolSettings>) => void;
+  setExportSettings: (settings: Partial<ProfessionalExportSettings>) => void;
 };
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -133,7 +216,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   canvasSnapshots: {},
   canvasObjects: [],
   userCompositions: loadUserCompositionsFromLocalStorage(),
+  visualAssets: [],
+  visualAssetsLoaded: false,
   selectedObjectId: null,
+  selectedLayerIds: [],
   selectionRequest: null,
   layerActionRequest: null,
   libraryActionRequest: null,
@@ -145,12 +231,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   historyRequest: null,
   viewportRequest: null,
   propertyUpdateRequest: null,
+  textOutlineRequest: null,
   compositionSaveRequest: null,
   selectedObjectProperties: null,
   cursorStyle: "auto",
   colorMode: loadColorModeFromLocalStorage(),
   textFontFamily: defaultTextFontFamily,
   finishSettings: defaultFinishSettings,
+  gradientToolSettings: defaultGradientToolSettings,
+  exportSettings: defaultExportSettings,
   viewSettings: {
     customGuides: [],
     showGrid: false,
@@ -160,86 +249,186 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   addCanvasObject: (object) =>
     set((state) => ({
       canvasObjects: [...state.canvasObjects, object],
-      selectedObjectId: object.id
+      selectedObjectId: object.id,
+      selectedLayerIds: [object.id]
     })),
-  setSelectedObjectId: (id) => set({ selectedObjectId: id }),
+  setSelectedObjectId: (id) =>
+    set({
+      selectedObjectId: id,
+      selectedLayerIds: id ? [id] : []
+    }),
+  setCanvasSelection: (ids) =>
+    set({
+      selectedObjectId: ids.length === 1 ? ids[0] : null,
+      selectedLayerIds: ids
+    }),
   requestObjectSelection: (id) =>
     set((state) => ({
       selectedObjectId: id,
+      selectedLayerIds: id ? [id] : [],
       selectionRequest: {
         objectId: id,
+        objectIds: id ? [id] : [],
         requestId: (state.selectionRequest?.requestId ?? 0) + 1
       }
-    }))
-  ,
-  toggleLayerVisibility: (id) =>
+    })),
+  requestLayerSelection: (ids) =>
     set((state) => {
-      const target = state.canvasObjects.find((object) => object.id === id);
-      const willBeHidden = target?.visible;
-      const shouldClearSelection = willBeHidden && state.selectedObjectId === id;
+      const selectedLayerIds = uniqueIds(ids);
+
+      return {
+        selectedObjectId:
+          selectedLayerIds.length === 1 ? selectedLayerIds[0] : null,
+        selectedLayerIds,
+        selectionRequest: {
+          objectId: selectedLayerIds[0] ?? null,
+          objectIds: selectedLayerIds,
+          requestId: (state.selectionRequest?.requestId ?? 0) + 1
+        }
+      };
+    }),
+  toggleLayerVisibility: (id) =>
+    get().toggleLayersVisibility([id]),
+  toggleLayersVisibility: (ids) =>
+    set((state) => {
+      const targetIds = uniqueIds(ids);
+      const targets = state.canvasObjects.filter((object) =>
+        targetIds.includes(object.id)
+      );
+
+      if (targets.length === 0) {
+        return {};
+      }
+
+      const shouldHide = targets.some((object) => object.visible);
+      const nextSelectedLayerIds = shouldHide
+        ? state.selectedLayerIds.filter((id) => !targetIds.includes(id))
+        : state.selectedLayerIds;
 
       return {
         canvasObjects: state.canvasObjects.map((object) =>
-          object.id === id ? { ...object, visible: !object.visible } : object
+          targetIds.includes(object.id)
+            ? { ...object, visible: !shouldHide }
+            : object
         ),
-        selectedObjectId: shouldClearSelection ? null : state.selectedObjectId,
-        selectionRequest: shouldClearSelection
+        selectedObjectId:
+          nextSelectedLayerIds.length === 1 ? nextSelectedLayerIds[0] : null,
+        selectedLayerIds: nextSelectedLayerIds,
+        selectionRequest: shouldHide
           ? {
-              objectId: null,
+              objectId: nextSelectedLayerIds[0] ?? null,
+              objectIds: nextSelectedLayerIds,
               requestId: (state.selectionRequest?.requestId ?? 0) + 1
             }
           : state.selectionRequest,
         layerActionRequest: createLayerActionRequest(
           state.layerActionRequest,
-          id,
+          targetIds,
           "toggle-visibility"
         )
       };
     }),
   toggleLayerLock: (id) =>
+    get().toggleLayersLock([id]),
+  toggleLayersLock: (ids) =>
     set((state) => {
-      const target = state.canvasObjects.find((object) => object.id === id);
-      const willBeLocked = !target?.locked;
-      const shouldClearSelection = willBeLocked && state.selectedObjectId === id;
+      const targetIds = uniqueIds(ids);
+      const targets = state.canvasObjects.filter((object) =>
+        targetIds.includes(object.id)
+      );
+
+      if (targets.length === 0) {
+        return {};
+      }
+
+      const shouldLock = targets.some((object) => !object.locked);
+      const nextSelectedLayerIds = shouldLock
+        ? state.selectedLayerIds.filter((id) => !targetIds.includes(id))
+        : state.selectedLayerIds;
 
       return {
         canvasObjects: state.canvasObjects.map((object) =>
-          object.id === id ? { ...object, locked: !object.locked } : object
+          targetIds.includes(object.id)
+            ? { ...object, locked: shouldLock }
+            : object
         ),
-        selectedObjectId: shouldClearSelection ? null : state.selectedObjectId,
-        selectionRequest: shouldClearSelection
+        selectedObjectId:
+          nextSelectedLayerIds.length === 1 ? nextSelectedLayerIds[0] : null,
+        selectedLayerIds: nextSelectedLayerIds,
+        selectionRequest: shouldLock
           ? {
-              objectId: null,
+              objectId: nextSelectedLayerIds[0] ?? null,
+              objectIds: nextSelectedLayerIds,
               requestId: (state.selectionRequest?.requestId ?? 0) + 1
             }
           : state.selectionRequest,
         layerActionRequest: createLayerActionRequest(
           state.layerActionRequest,
-          id,
+          targetIds,
           "toggle-lock"
         )
       };
     }),
   deleteLayer: (id) =>
+    get().deleteLayers([id]),
+  deleteLayers: (ids) =>
+    set((state) => {
+      const targetIds = uniqueIds(ids);
+      const nextSelectedLayerIds = state.selectedLayerIds.filter(
+        (id) => !targetIds.includes(id)
+      );
+
+      return {
+        canvasObjects: state.canvasObjects.filter(
+          (object) => !targetIds.includes(object.id)
+        ),
+        selectedObjectId:
+          nextSelectedLayerIds.length === 1 ? nextSelectedLayerIds[0] : null,
+        selectedLayerIds: nextSelectedLayerIds,
+        selectionRequest: {
+          objectId: nextSelectedLayerIds[0] ?? null,
+          objectIds: nextSelectedLayerIds,
+          requestId: (state.selectionRequest?.requestId ?? 0) + 1
+        },
+        layerActionRequest: createLayerActionRequest(
+          state.layerActionRequest,
+          targetIds,
+          "delete"
+        )
+      };
+    }),
+  duplicateLayers: (ids) =>
     set((state) => ({
-      canvasObjects: state.canvasObjects.filter((object) => object.id !== id),
-      selectedObjectId: state.selectedObjectId === id ? null : state.selectedObjectId,
-      selectionRequest:
-        state.selectedObjectId === id
-          ? {
-              objectId: null,
-              requestId: (state.selectionRequest?.requestId ?? 0) + 1
-            }
-          : state.selectionRequest,
       layerActionRequest: createLayerActionRequest(
         state.layerActionRequest,
-        id,
-        "delete"
+        uniqueIds(ids),
+        "duplicate"
+      )
+    })),
+  groupLayers: (ids) =>
+    set((state) => ({
+      layerActionRequest: createLayerActionRequest(
+        state.layerActionRequest,
+        uniqueIds(ids),
+        "group"
+      )
+    })),
+  ungroupLayers: (ids) =>
+    set((state) => ({
+      layerActionRequest: createLayerActionRequest(
+        state.layerActionRequest,
+        uniqueIds(ids),
+        "ungroup"
       )
     })),
   moveLayer: (id, direction) =>
+    get().moveLayers([id], direction),
+  moveLayers: (ids, direction) =>
     set((state) => {
-      const object = state.canvasObjects.find((item) => item.id === id);
+      const targetIds = uniqueIds(ids);
+      const object = state.canvasObjects.find((item) =>
+        targetIds.includes(item.id)
+      );
 
       if (!object) {
         return {};
@@ -248,18 +437,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const activeObjects = state.canvasObjects.filter(
         (item) => item.artboardId === object.artboardId
       );
-      const activeIndex = activeObjects.findIndex((item) => item.id === id);
-      const targetIndex = direction === "up" ? activeIndex + 1 : activeIndex - 1;
+      const reorderedActiveObjects = reorderLayerSummaries(
+        activeObjects,
+        targetIds,
+        direction
+      );
 
-      if (targetIndex < 0 || targetIndex >= activeObjects.length) {
+      if (reorderedActiveObjects === activeObjects) {
         return {};
       }
-
-      const reorderedActiveObjects = [...activeObjects];
-      [reorderedActiveObjects[activeIndex], reorderedActiveObjects[targetIndex]] = [
-        reorderedActiveObjects[targetIndex],
-        reorderedActiveObjects[activeIndex]
-      ];
 
       let nextActiveObjectIndex = 0;
 
@@ -275,7 +461,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }),
         layerActionRequest: createLayerActionRequest(
           state.layerActionRequest,
-          id,
+          targetIds,
           direction === "up" ? "move-up" : "move-down"
         )
       };
@@ -294,7 +480,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ),
         layerActionRequest: createLayerActionRequest(
           state.layerActionRequest,
-          id,
+          [id],
           "rename"
         )
       };
@@ -331,10 +517,55 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         requestId: (state.libraryActionRequest?.requestId ?? 0) + 1
       }
     })),
+  requestAddVisualAssetToCanvas: (asset) =>
+    set((state) => ({
+      libraryActionRequest: {
+        action: "add-visual-asset",
+        asset,
+        requestId: (state.libraryActionRequest?.requestId ?? 0) + 1
+      }
+    })),
+  loadVisualAssets: async () => {
+    const indexedDbAssets = await loadVisualAssetsFromIndexedDb();
+    const legacyAssets = loadVisualAssetsFromLocalStorage();
+    const visualAssets = mergeVisualAssets(indexedDbAssets, legacyAssets);
+
+    set({ visualAssets, visualAssetsLoaded: true });
+
+    if (legacyAssets.length > 0) {
+      void replaceVisualAssetsInIndexedDb(visualAssets).then(() => {
+        removeLegacyVisualAssetsFromLocalStorage();
+      });
+    }
+  },
+  addVisualAsset: (asset) =>
+    set((state) => {
+      const visualAssets = [
+        asset,
+        ...state.visualAssets.filter((item) => item.id !== asset.id)
+      ];
+
+      void saveVisualAssetToIndexedDb(asset);
+      return { visualAssets };
+    }),
+  deleteVisualAsset: (id) =>
+    set((state) => {
+      const visualAssets = state.visualAssets.filter((asset) => asset.id !== id);
+
+      void deleteVisualAssetFromIndexedDb(id);
+      return { visualAssets };
+    }),
   requestSaveSelectionAsComposition: () =>
     set((state) => ({
       compositionSaveRequest: {
         requestId: (state.compositionSaveRequest?.requestId ?? 0) + 1
+      }
+    })),
+  requestUpdateCompositionFromSelection: (id) =>
+    set((state) => ({
+      compositionSaveRequest: {
+        requestId: (state.compositionSaveRequest?.requestId ?? 0) + 1,
+        targetId: id
       }
     })),
   addUserComposition: (composition) =>
@@ -344,10 +575,86 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
       return { userCompositions };
     }),
+  updateUserComposition: (composition) =>
+    set((state) => {
+      const userCompositions = state.userCompositions.map((item) =>
+        item.id === composition.id ? composition : item
+      );
+
+      saveUserCompositionsToLocalStorage(userCompositions);
+      return { userCompositions };
+    }),
+  renameUserComposition: (id, label) =>
+    set((state) => {
+      const trimmedLabel = label.trim();
+
+      if (!trimmedLabel) {
+        return {};
+      }
+
+      const userCompositions = state.userCompositions.map((composition) =>
+        composition.id === id
+          ? { ...composition, label: trimmedLabel }
+          : composition
+      );
+
+      saveUserCompositionsToLocalStorage(userCompositions);
+      return { userCompositions };
+    }),
+  deleteUserComposition: (id) =>
+    set((state) => {
+      const userCompositions = state.userCompositions.filter(
+        (composition) => composition.id !== id
+      );
+
+      saveUserCompositionsToLocalStorage(userCompositions);
+      return { userCompositions };
+    }),
+  moveUserComposition: (id, direction) =>
+    set((state) => {
+      const currentIndex = state.userCompositions.findIndex(
+        (composition) => composition.id === id
+      );
+      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+
+      if (
+        currentIndex < 0 ||
+        targetIndex < 0 ||
+        targetIndex >= state.userCompositions.length
+      ) {
+        return {};
+      }
+
+      const userCompositions = [...state.userCompositions];
+      [userCompositions[currentIndex], userCompositions[targetIndex]] = [
+        userCompositions[targetIndex],
+        userCompositions[currentIndex]
+      ];
+
+      saveUserCompositionsToLocalStorage(userCompositions);
+      return { userCompositions };
+    }),
+  importUserCompositions: (compositions) =>
+    set((state) => {
+      const userCompositions = mergeUserCompositions(
+        state.userCompositions,
+        compositions
+      );
+
+      saveUserCompositionsToLocalStorage(userCompositions);
+      return { userCompositions };
+    }),
   requestExportPng: () =>
     set((state) => ({
       exportRequest: {
         format: "png",
+        requestId: (state.exportRequest?.requestId ?? 0) + 1
+      }
+    })),
+  requestExportJpeg: () =>
+    set((state) => ({
+      exportRequest: {
+        format: "jpeg",
         requestId: (state.exportRequest?.requestId ?? 0) + 1
       }
     })),
@@ -362,6 +669,27 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       exportRequest: {
         format: "all-png",
+        requestId: (state.exportRequest?.requestId ?? 0) + 1
+      }
+    })),
+  requestExportAllJpeg: () =>
+    set((state) => ({
+      exportRequest: {
+        format: "all-jpeg",
+        requestId: (state.exportRequest?.requestId ?? 0) + 1
+      }
+    })),
+  requestExportPdf: () =>
+    set((state) => ({
+      exportRequest: {
+        format: "pdf",
+        requestId: (state.exportRequest?.requestId ?? 0) + 1
+      }
+    })),
+  requestExportPackage: () =>
+    set((state) => ({
+      exportRequest: {
+        format: "package",
         requestId: (state.exportRequest?.requestId ?? 0) + 1
       }
     })),
@@ -393,6 +721,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         requestId: (state.propertyUpdateRequest?.requestId ?? 0) + 1
       }
     })),
+  requestConvertSelectedTextToOutline: (objectId) =>
+    set((state) => ({
+      textOutlineRequest: {
+        objectId,
+        requestId: (state.textOutlineRequest?.requestId ?? 0) + 1
+      }
+    })),
   setSelectedObjectProperties: (properties) =>
     set({ selectedObjectProperties: properties }),
   replaceCanvasObjectsForArtboard: (artboardId, objects) =>
@@ -402,6 +737,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...objects
       ],
       selectedObjectId: null,
+      selectedLayerIds: [],
       selectedObjectProperties: null
     })),
   requestSaveProject: () =>
@@ -439,7 +775,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       activeArtboardId: state.activeArtboardId,
       canvasSnapshots: state.canvasSnapshots,
       canvasObjects: state.canvasObjects,
+      visualAssets: state.visualAssets,
       finishSettings: state.finishSettings,
+      exportSettings: state.exportSettings,
       userCompositions: state.userCompositions,
       viewSettings: state.viewSettings,
       savedAt: new Date().toISOString()
@@ -452,6 +790,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const userCompositions =
       savedProject.userCompositions ?? get().userCompositions;
+    const visualAssets = savedProject.visualAssets ?? get().visualAssets;
 
     set({
       projectName: savedProject.projectName,
@@ -459,12 +798,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       activeArtboardId: savedProject.activeArtboardId,
       canvasSnapshots: savedProject.canvasSnapshots,
       canvasObjects: savedProject.canvasObjects,
+      visualAssets,
+      visualAssetsLoaded: true,
       userCompositions,
       finishSettings: {
         ...defaultFinishSettings,
         ...savedProject.finishSettings
       },
+      exportSettings: {
+        ...defaultExportSettings,
+        ...savedProject.exportSettings
+      },
       selectedObjectId: null,
+      selectedLayerIds: [],
       selectionRequest: null,
       layerActionRequest: null,
       libraryActionRequest: null,
@@ -476,6 +822,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
     });
     saveUserCompositionsToLocalStorage(userCompositions);
+    void replaceVisualAssetsInIndexedDb(visualAssets);
 
     return true;
   },
@@ -561,13 +908,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     })),
   addArtboard: (format, orientation) =>
     set((state) => {
-      const artboard = createArtboard(format, orientation, state.artboards.length + 1);
+      const artboard = createArtboard(
+        format,
+        orientation,
+        state.artboards.length + 1,
+        state.exportSettings.dpi
+      );
 
       return {
         artboards: [...state.artboards, artboard],
         activeArtboardId: artboard.id,
         selectedObjectId: null,
+        selectedLayerIds: [],
         selectionRequest: null
+      };
+    }),
+  updateActiveArtboardFormat: (format, orientation) =>
+    set((state) => {
+      const dimensions = getFormatPixels(format, orientation, state.exportSettings.dpi);
+
+      return {
+        artboards: state.artboards.map((artboard) =>
+          artboard.id === state.activeArtboardId
+            ? {
+                ...artboard,
+                formatId: format.id,
+                orientation,
+                width: dimensions.width,
+                height: dimensions.height
+              }
+            : artboard
+        )
       };
     }),
   updateActiveArtboardSize: (width, height) =>
@@ -576,7 +947,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         artboard.id === state.activeArtboardId
           ? {
               ...artboard,
-              formatId: "custom",
+              formatId: getMatchingFormatId(
+                width,
+                height,
+                state.exportSettings.dpi
+              ),
               orientation: width >= height ? "landscape" : "portrait",
               width,
               height
@@ -588,6 +963,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       activeArtboardId: id,
       selectedObjectId: null,
+      selectedLayerIds: [],
       selectionRequest: null
     }),
   setCanvasSnapshot: (artboardId, snapshot) =>
@@ -607,10 +983,80 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       finishSettings: {
         ...state.finishSettings,
-        ...settings
+        ...settings,
+        colorAdjustments: settings.colorAdjustments
+          ? {
+              ...state.finishSettings.colorAdjustments,
+              ...settings.colorAdjustments
+            }
+          : state.finishSettings.colorAdjustments
       }
-    }))
+    })),
+  setGradientToolSettings: (settings) =>
+    set((state) => ({
+      gradientToolSettings: {
+        ...state.gradientToolSettings,
+        ...settings,
+        intensity:
+          typeof settings.intensity === "number"
+            ? Math.min(Math.max(settings.intensity, 0), 1)
+            : state.gradientToolSettings.intensity
+      }
+    })),
+  setExportSettings: (settings) =>
+    set((state) => {
+      const nextDpi =
+        settings.dpi === undefined
+          ? state.exportSettings.dpi
+          : clampDpi(settings.dpi);
+      const nextExportSettings = {
+        ...state.exportSettings,
+        ...settings,
+        dpi: nextDpi
+      };
+
+      return {
+        exportSettings: nextExportSettings,
+        artboards: state.artboards.map((artboard) => {
+          const format = canvasFormats.find((item) => item.id === artboard.formatId);
+
+          if (!format) {
+            return artboard;
+          }
+
+          const dimensions = getFormatPixels(format, artboard.orientation, nextDpi);
+
+          return {
+            ...artboard,
+            width: dimensions.width,
+            height: dimensions.height
+          };
+        })
+      };
+    })
 }));
+
+function getMatchingFormatId(width: number, height: number, dpi: number) {
+  const orientation = width >= height ? "landscape" : "portrait";
+  const match = canvasFormats.find((format) => {
+    const dimensions = getFormatPixels(format, orientation, dpi);
+
+    return (
+      Math.abs(dimensions.width - width) <= 2 &&
+      Math.abs(dimensions.height - height) <= 2
+    );
+  });
+
+  return match?.id ?? "custom";
+}
+
+function clampDpi(value: number) {
+  if (!Number.isFinite(value)) {
+    return defaultCanvasDpi;
+  }
+
+  return Math.min(Math.max(Math.round(value), minCanvasDpi), maxCanvasDpi);
+}
 
 function isValidSavedProject(project: SavedProject) {
   return (
@@ -627,14 +1073,55 @@ function isValidSavedProject(project: SavedProject) {
 
 function createLayerActionRequest(
   currentRequest: LayerActionRequest | null,
-  objectId: string,
+  objectIds: string[],
   action: LayerActionRequest["action"]
 ): LayerActionRequest {
+  const uniqueObjectIds = uniqueIds(objectIds);
+
   return {
-    objectId,
     action,
+    objectId: uniqueObjectIds[0],
+    objectIds: uniqueObjectIds,
     requestId: (currentRequest?.requestId ?? 0) + 1
   };
+}
+
+function uniqueIds(ids: string[]) {
+  return Array.from(new Set(ids.filter(Boolean)));
+}
+
+function reorderLayerSummaries(
+  layers: CanvasObjectSummary[],
+  ids: string[],
+  direction: "up" | "down"
+) {
+  const selectedIds = new Set(ids);
+  const nextLayers = [...layers];
+  let moved = false;
+
+  if (direction === "up") {
+    for (let index = nextLayers.length - 2; index >= 0; index -= 1) {
+      const current = nextLayers[index];
+      const above = nextLayers[index + 1];
+
+      if (selectedIds.has(current.id) && !selectedIds.has(above.id)) {
+        [nextLayers[index], nextLayers[index + 1]] = [above, current];
+        moved = true;
+      }
+    }
+  } else {
+    for (let index = 1; index < nextLayers.length; index += 1) {
+      const current = nextLayers[index];
+      const below = nextLayers[index - 1];
+
+      if (selectedIds.has(current.id) && !selectedIds.has(below.id)) {
+        [nextLayers[index], nextLayers[index - 1]] = [below, current];
+        moved = true;
+      }
+    }
+  }
+
+  return moved ? nextLayers : layers;
 }
 
 function getNextGuidePosition(
@@ -688,6 +1175,94 @@ function saveUserCompositionsToLocalStorage(compositions: SavedComposition[]) {
   }
 
   localStorage.setItem(localCompositionsKey, JSON.stringify(compositions));
+}
+
+function loadVisualAssetsFromLocalStorage(): VisualAsset[] {
+  if (typeof localStorage === "undefined") {
+    return [];
+  }
+
+  const rawAssets = localStorage.getItem(localVisualAssetsKey);
+
+  if (!rawAssets) {
+    return [];
+  }
+
+  try {
+    const assets = JSON.parse(rawAssets) as VisualAsset[];
+    return Array.isArray(assets) ? assets.filter(isVisualAsset) : [];
+  } catch {
+    return [];
+  }
+}
+
+function removeLegacyVisualAssetsFromLocalStorage() {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+
+  localStorage.removeItem(localVisualAssetsKey);
+}
+
+function mergeVisualAssets(
+  indexedDbAssets: VisualAsset[],
+  legacyAssets: VisualAsset[]
+) {
+  const assetMap = new Map<string, VisualAsset>();
+
+  [...legacyAssets, ...indexedDbAssets].forEach((asset) => {
+    assetMap.set(asset.id, asset);
+  });
+
+  return Array.from(assetMap.values()).sort(
+    (firstAsset, secondAsset) =>
+      new Date(secondAsset.createdAt).getTime() -
+      new Date(firstAsset.createdAt).getTime()
+  );
+}
+
+function mergeUserCompositions(
+  currentCompositions: SavedComposition[],
+  importedCompositions: SavedComposition[]
+) {
+  const nextCompositions = [...currentCompositions];
+
+  importedCompositions.forEach((composition) => {
+    const existingIndex = nextCompositions.findIndex(
+      (item) => item.id === composition.id
+    );
+
+    if (existingIndex >= 0) {
+      nextCompositions[existingIndex] = composition;
+      return;
+    }
+
+    nextCompositions.push(composition);
+  });
+
+  return nextCompositions;
+}
+
+function isVisualAsset(value: unknown): value is VisualAsset {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const asset = value as Partial<VisualAsset>;
+
+  return (
+    typeof asset.id === "string" &&
+    typeof asset.name === "string" &&
+    typeof asset.dataUrl === "string" &&
+    typeof asset.mimeType === "string" &&
+    typeof asset.createdAt === "string" &&
+    (asset.category === "compositions" ||
+      asset.category === "pigments" ||
+      asset.category === "pigment-mixes" ||
+      asset.category === "color-palettes" ||
+      asset.category === "textures" ||
+      asset.category === "final-works")
+  );
 }
 
 function loadColorModeFromLocalStorage(): ColorMode {

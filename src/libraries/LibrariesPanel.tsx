@@ -1,8 +1,26 @@
-import { useState } from "react";
-import { Blocks, Library, PaintBucket, Shapes, Sparkles } from "lucide-react";
+import { useRef, useState } from "react";
+import type { ChangeEvent, ReactNode } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Blocks,
+  Download,
+  Library,
+  PaintBucket,
+  RefreshCw,
+  Shapes,
+  Sparkles,
+  Trash2,
+  Upload
+} from "lucide-react";
 import { useEditorStore } from "../store/editorStore";
 import type { CanvasObjectType } from "../types/editor";
-import type { CompositionPreset, LibraryTab } from "../types/library";
+import type {
+  CompositionPreset,
+  LibraryTab,
+  SavedComposition,
+  TexturePreset
+} from "../types/library";
 import { clsx } from "../utils/clsx";
 import {
   compositionPresets,
@@ -13,7 +31,9 @@ import {
 import { libraryTabs } from "./libraryRegistry";
 
 export function LibrariesPanel() {
+  const compositionImportInputRef = useRef<HTMLInputElement | null>(null);
   const [activeTab, setActiveTab] = useState<LibraryTab["id"]>("forms");
+  const [compositionImportMessage, setCompositionImportMessage] = useState("");
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId);
   const requestAddLibraryForm = useEditorStore(
     (state) => state.requestAddLibraryForm
@@ -30,13 +50,73 @@ export function LibrariesPanel() {
   const requestSaveSelectionAsComposition = useEditorStore(
     (state) => state.requestSaveSelectionAsComposition
   );
+  const requestUpdateCompositionFromSelection = useEditorStore(
+    (state) => state.requestUpdateCompositionFromSelection
+  );
   const userCompositions = useEditorStore((state) => state.userCompositions);
+  const renameUserComposition = useEditorStore(
+    (state) => state.renameUserComposition
+  );
+  const deleteUserComposition = useEditorStore(
+    (state) => state.deleteUserComposition
+  );
+  const moveUserComposition = useEditorStore(
+    (state) => state.moveUserComposition
+  );
+  const importUserCompositions = useEditorStore(
+    (state) => state.importUserCompositions
+  );
   const compositions: CompositionPreset[] = [
     ...compositionPresets,
     ...userCompositions
   ];
   const gradientTextures = texturePresets.filter(isGradientTexture);
-  const vectorTextures = texturePresets.filter((texture) => !isGradientTexture(texture));
+  const bauhausTextures = texturePresets.filter((texture) => texture.group === "bauhaus");
+  const popArtTextures = texturePresets.filter((texture) => texture.group === "popArt");
+  const serigraphyTextures = texturePresets.filter(
+    (texture) => texture.group === "serigraphy"
+  );
+  const utilityTextures = texturePresets.filter(
+    (texture) => texture.group === "utility" || (!isGradientTexture(texture) && !texture.group)
+  );
+  const handleCompositionImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const importedCompositions = parseCompositionImportFile(parsed);
+
+      if (importedCompositions.length === 0) {
+        setCompositionImportMessage("No valid compositions found.");
+        return;
+      }
+
+      importUserCompositions(importedCompositions);
+      setCompositionImportMessage(
+        `${importedCompositions.length} composition${importedCompositions.length === 1 ? "" : "s"} imported.`
+      );
+    } catch {
+      setCompositionImportMessage("Import failed. Use a valid JSON file.");
+    } finally {
+      event.currentTarget.value = "";
+    }
+  };
+  const exportAllCompositions = () => {
+    if (userCompositions.length === 0) {
+      setCompositionImportMessage("No saved compositions to export.");
+      return;
+    }
+
+    downloadCompositionLibraryFile(
+      "neoform-compositions.json",
+      userCompositions
+    );
+    setCompositionImportMessage(`${userCompositions.length} compositions exported.`);
+  };
 
   return (
     <section className="min-h-0 overflow-hidden bg-paper" data-tour="libraries">
@@ -128,6 +208,19 @@ export function LibrariesPanel() {
 
         {activeTab === "textures" ? (
           <div className="space-y-2">
+            <div
+              className="border-2 border-ink bg-bone p-2 text-[9px] font-black uppercase leading-tight shadow-brutal-sm"
+              data-tour="textures-vector-note"
+            >
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span>Texture type</span>
+                <span className="bg-punch px-1 text-paper">Vector vs Raster</span>
+              </div>
+              <p className="text-[8px] leading-snug text-ink/75">
+                These tiles are SVG/vector patterns for objects. Analog film grain is a
+                raster finish for final JPG/package exports and lives in the left sidebar.
+              </p>
+            </div>
             <TextureGroup
               featured
               title="Degradados / Gradients"
@@ -136,8 +229,26 @@ export function LibrariesPanel() {
               onApply={requestApplyTexture}
             />
             <TextureGroup
-              title="Vector textures"
-              textures={vectorTextures}
+              title="Bauhaus vector"
+              textures={bauhausTextures}
+              selectedObjectId={selectedObjectId}
+              onApply={requestApplyTexture}
+            />
+            <TextureGroup
+              title="Pop Art vector"
+              textures={popArtTextures}
+              selectedObjectId={selectedObjectId}
+              onApply={requestApplyTexture}
+            />
+            <TextureGroup
+              title="Serigrafía vector"
+              textures={serigraphyTextures}
+              selectedObjectId={selectedObjectId}
+              onApply={requestApplyTexture}
+            />
+            <TextureGroup
+              title="Utility vector"
+              textures={utilityTextures}
               selectedObjectId={selectedObjectId}
               onApply={requestApplyTexture}
             />
@@ -146,15 +257,48 @@ export function LibrariesPanel() {
 
         {activeTab === "compositions" ? (
           <div className="space-y-2">
-            <button
-              type="button"
-              onClick={requestSaveSelectionAsComposition}
-              className="flex w-full items-center justify-between gap-2 border-2 border-ink bg-pollen px-2 py-1.5 text-left text-[9px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 hover:bg-mineral"
-              data-tour="compositions-save"
-            >
-              <span>Save selected figures</span>
-              <Blocks size={12} />
-            </button>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={requestSaveSelectionAsComposition}
+                className="col-span-3 flex w-full items-center justify-between gap-2 border-2 border-ink bg-pollen px-2 py-1.5 text-left text-[9px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 hover:bg-mineral"
+                data-tour="compositions-save"
+              >
+                <span>Save selected figures</span>
+                <Blocks size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={exportAllCompositions}
+                className="flex items-center justify-center gap-1 border-2 border-ink bg-bone px-1 py-1 text-[8px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 hover:bg-pollen"
+              >
+                <Download size={11} />
+                Export all
+              </button>
+              <button
+                type="button"
+                onClick={() => compositionImportInputRef.current?.click()}
+                className="flex items-center justify-center gap-1 border-2 border-ink bg-bone px-1 py-1 text-[8px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 hover:bg-pollen"
+              >
+                <Upload size={11} />
+                Import
+              </button>
+              <span className="border-2 border-ink bg-paper px-1 py-1 text-center text-[8px] font-black uppercase">
+                {userCompositions.length} own
+              </span>
+              <input
+                ref={compositionImportInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleCompositionImport}
+                className="hidden"
+              />
+            </div>
+            {compositionImportMessage ? (
+              <p className="border-2 border-ink bg-paper p-1 text-[8px] font-black uppercase leading-tight text-ink/70">
+                {compositionImportMessage}
+              </p>
+            ) : null}
             {compositions.length === 0 ? (
               <p className="border-2 border-dashed border-ink bg-bone p-2 text-[9px] font-black uppercase leading-tight text-ink/65">
                 No saved compositions yet. Select figures on the canvas and save
@@ -163,12 +307,11 @@ export function LibrariesPanel() {
             ) : null}
             <div className="grid grid-cols-2 gap-2">
               {compositions.map((composition) => (
-                <button
+                <article
                   key={composition.id}
-                  type="button"
                   onClick={() => requestAddComposition(composition)}
                   className={clsx(
-                    "border-2 border-ink p-2 text-left shadow-brutal-sm transition hover:-translate-y-0.5 hover:bg-pollen",
+                    "cursor-pointer border-2 border-ink p-2 text-left shadow-brutal-sm transition hover:-translate-y-0.5 hover:bg-pollen",
                     composition.source === "saved" ? "bg-mineral" : "bg-bone"
                   )}
                 >
@@ -193,9 +336,91 @@ export function LibrariesPanel() {
                   </span>
                   <span className="flex items-center gap-1 text-[9px] font-black uppercase leading-none">
                     <Blocks size={11} />
-                    {composition.label}
+                    {composition.source === "saved" ? (
+                      <input
+                        defaultValue={composition.label}
+                        onClick={(event) => event.stopPropagation()}
+                        onFocus={(event) => event.currentTarget.select()}
+                        onBlur={(event) =>
+                          renameUserComposition(
+                            composition.id,
+                            event.currentTarget.value
+                          )
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.currentTarget.blur();
+                          }
+
+                          if (event.key === "Escape") {
+                            event.currentTarget.value = composition.label;
+                            event.currentTarget.blur();
+                          }
+                        }}
+                        className="min-w-0 flex-1 border-2 border-ink bg-paper px-1 py-0 text-[8px] font-black uppercase outline-none focus:bg-pollen"
+                        aria-label={`Rename ${composition.label}`}
+                      />
+                    ) : (
+                      composition.label
+                    )}
                   </span>
-                </button>
+                  {composition.source === "saved" ? (
+                    <div className="mt-1 grid grid-cols-6 gap-1">
+                      <CompositionIconButton
+                        label="Update from current selection"
+                        onClick={() =>
+                          requestUpdateCompositionFromSelection(composition.id)
+                        }
+                      >
+                        <RefreshCw size={11} />
+                      </CompositionIconButton>
+                      <CompositionIconButton
+                        label="Move composition up"
+                        disabled={
+                          userCompositions.findIndex(
+                            (item) => item.id === composition.id
+                          ) === 0
+                        }
+                        onClick={() => moveUserComposition(composition.id, "up")}
+                      >
+                        <ArrowUp size={11} />
+                      </CompositionIconButton>
+                      <CompositionIconButton
+                        label="Move composition down"
+                        disabled={
+                          userCompositions.findIndex(
+                            (item) => item.id === composition.id
+                          ) ===
+                          userCompositions.length - 1
+                        }
+                        onClick={() => moveUserComposition(composition.id, "down")}
+                      >
+                        <ArrowDown size={11} />
+                      </CompositionIconButton>
+                      <CompositionIconButton
+                        label="Export composition"
+                        onClick={() =>
+                          downloadCompositionLibraryFile(
+                            `${toFileSlug(composition.label) || "composition"}.json`,
+                            [composition as SavedComposition]
+                          )
+                        }
+                      >
+                        <Download size={11} />
+                      </CompositionIconButton>
+                      <CompositionIconButton
+                        label="Delete composition"
+                        onClick={() => deleteUserComposition(composition.id)}
+                        danger
+                      >
+                        <Trash2 size={11} />
+                      </CompositionIconButton>
+                      <span className="grid h-5 place-items-center border-2 border-ink bg-paper text-[7px] font-black uppercase">
+                        Edit
+                      </span>
+                    </div>
+                  ) : null}
+                </article>
               ))}
             </div>
           </div>
@@ -206,14 +431,14 @@ export function LibrariesPanel() {
 }
 
 type TexturePreviewProps = {
-  texture: (typeof texturePresets)[number];
+  texture: TexturePreset;
 };
 
 type TextureGroupProps = {
   featured?: boolean;
-  onApply: (texture: (typeof texturePresets)[number]) => void;
+  onApply: (texture: TexturePreset) => void;
   selectedObjectId: string | null;
-  textures: typeof texturePresets;
+  textures: TexturePreset[];
   title: string;
 };
 
@@ -248,9 +473,16 @@ function TextureGroup({
             )}
           >
             <TexturePreview texture={texture} />
-            <span className="mt-1 flex items-center gap-1 text-[9px] font-black uppercase leading-none">
-              <Sparkles size={11} />
-              {texture.label}
+            <span className="mt-1 flex items-center justify-between gap-1 text-[9px] font-black uppercase leading-none">
+              <span className="flex min-w-0 items-center gap-1">
+                <Sparkles size={11} />
+                <span className="truncate">{texture.label}</span>
+              </span>
+              {texture.renderMode ? (
+                <span className="border border-ink bg-pollen px-1 text-[7px]">
+                  {texture.renderMode === "vector" ? "Vector" : "Raster"}
+                </span>
+              ) : null}
             </span>
           </button>
         ))}
@@ -692,6 +924,105 @@ function ShapePreview({ compact = false, fill, type }: ShapePreviewProps) {
   );
 }
 
+type CompositionIconButtonProps = {
+  children: ReactNode;
+  danger?: boolean;
+  disabled?: boolean;
+  label: string;
+  onClick: () => void;
+};
+
+function CompositionIconButton({
+  children,
+  danger = false,
+  disabled = false,
+  label,
+  onClick
+}: CompositionIconButtonProps) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      className={clsx(
+        "grid h-5 place-items-center border-2 border-ink bg-paper transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:translate-y-0",
+        danger && "bg-oxide text-paper"
+      )}
+      title={label}
+      aria-label={label}
+    >
+      {children}
+    </button>
+  );
+}
+
+function downloadCompositionLibraryFile(
+  filename: string,
+  compositions: SavedComposition[]
+) {
+  const blob = new Blob(
+    [
+      JSON.stringify(
+        {
+          app: "neoform-pigments",
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          compositions
+        },
+        null,
+        2
+      )
+    ],
+    { type: "application/json" }
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function parseCompositionImportFile(value: unknown) {
+  const maybeCompositions =
+    Array.isArray(value)
+      ? value
+      : value && typeof value === "object" && "compositions" in value
+        ? (value as { compositions?: unknown }).compositions
+        : [];
+
+  return Array.isArray(maybeCompositions)
+    ? maybeCompositions.filter(isImportedSavedComposition)
+    : [];
+}
+
+function isImportedSavedComposition(value: unknown): value is SavedComposition {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const composition = value as Partial<SavedComposition>;
+
+  return (
+    typeof composition.id === "string" &&
+    typeof composition.label === "string" &&
+    composition.source === "saved" &&
+    Array.isArray(composition.objects)
+  );
+}
+
+function toFileSlug(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function SavedCompositionPreview({ count }: { count: number }) {
   return (
     <span className="grid h-full place-items-center bg-[linear-gradient(135deg,#E8E0C0_0_48%,#101010_48%_52%,#90A0B8_52%)]">
@@ -711,7 +1042,7 @@ function TexturePreview({ texture }: TexturePreviewProps) {
   );
 }
 
-function isGradientTexture(texture: (typeof texturePresets)[number]) {
+function isGradientTexture(texture: TexturePreset) {
   return (
     texture.kind === "shadeGradient" ||
     texture.kind === "linearGradient" ||
@@ -720,7 +1051,7 @@ function isGradientTexture(texture: (typeof texturePresets)[number]) {
   );
 }
 
-function getTexturePreviewStyle(texture: (typeof texturePresets)[number]) {
+function getTexturePreviewStyle(texture: TexturePreset) {
   if (texture.kind === "shadeGradient") {
     return {
       background: `linear-gradient(135deg, #fff4cf 0%, ${texture.accent ?? texture.background} 52%, #533b2f 100%)`
@@ -829,6 +1160,71 @@ function getTexturePreviewStyle(texture: (typeof texturePresets)[number]) {
       backgroundColor: texture.background,
       backgroundImage: `linear-gradient(35deg, transparent 0 44%, ${texture.foreground} 45% 55%, transparent 56%), linear-gradient(125deg, transparent 0 44%, ${texture.accent ?? texture.foreground} 45% 55%, transparent 56%), radial-gradient(circle at 20% 70%, ${texture.foreground} 0 3px, transparent 4px)`,
       backgroundSize: "24px 24px"
+    };
+  }
+
+  if (texture.kind === "bauhausBlocks") {
+    return {
+      backgroundColor: texture.background,
+      backgroundImage: `linear-gradient(90deg, ${texture.foreground} 0 28%, transparent 28%), radial-gradient(circle at 70% 28%, ${texture.accent ?? texture.foreground} 0 16%, transparent 17%), linear-gradient(135deg, transparent 0 54%, #101010 55% 61%, transparent 62%), linear-gradient(0deg, transparent 0 62%, #F0B800 62% 86%, transparent 86%)`,
+      backgroundSize: "54px 54px"
+    };
+  }
+
+  if (texture.kind === "bauhausWeave") {
+    return {
+      backgroundColor: texture.background,
+      backgroundImage: `linear-gradient(90deg, transparent 0 9%, ${texture.foreground} 9% 42%, transparent 42%), radial-gradient(circle at 74% 24%, ${texture.accent ?? texture.foreground} 0 18%, transparent 19%), linear-gradient(135deg, transparent 0 46%, #101010 47% 55%, transparent 56%), linear-gradient(0deg, transparent 0 66%, #F0B800 66% 86%, transparent 86%)`,
+      backgroundSize: "52px 52px"
+    };
+  }
+
+  if (texture.kind === "bendayDots") {
+    return {
+      backgroundColor: texture.background,
+      backgroundImage: `radial-gradient(circle at 8px 8px, ${texture.foreground} 0 4px, transparent 5px), radial-gradient(circle at 24px 24px, ${texture.accent ?? texture.foreground} 0 3px, transparent 4px)`,
+      backgroundSize: "32px 32px"
+    };
+  }
+
+  if (texture.kind === "popHalftone") {
+    return {
+      backgroundColor: texture.background,
+      backgroundImage: `radial-gradient(circle at 7px 7px, ${texture.foreground} 0 2px, transparent 3px), radial-gradient(circle at 22px 10px, ${texture.accent ?? texture.foreground} 0 4px, transparent 5px), radial-gradient(circle at 12px 27px, ${texture.foreground} 0 6px, transparent 7px), linear-gradient(135deg, transparent 0 70%, #101010 70% 74%, transparent 74%)`,
+      backgroundSize: "38px 38px"
+    };
+  }
+
+  if (texture.kind === "serigraphyBars") {
+    return {
+      backgroundColor: texture.background,
+      backgroundImage: `repeating-linear-gradient(90deg, ${texture.foreground} 0 4px, transparent 4px 10px), repeating-linear-gradient(90deg, transparent 0 14px, ${texture.accent ?? texture.foreground} 14px 18px, transparent 18px 28px), repeating-linear-gradient(0deg, transparent 0 25px, rgba(0,0,0,0.35) 25px 28px, transparent 28px 40px)`,
+      backgroundPosition: "0 0, 5px 0, 0 0",
+      backgroundSize: "56px 56px"
+    };
+  }
+
+  if (texture.kind === "serigraphyScreen") {
+    return {
+      backgroundColor: texture.background,
+      backgroundImage: `repeating-linear-gradient(58deg, ${texture.foreground} 0 2px, transparent 2px 12px), repeating-linear-gradient(58deg, transparent 0 7px, ${texture.accent ?? texture.foreground} 7px 9px, transparent 9px 18px), radial-gradient(circle at 28% 30%, transparent 0 14%, #101010 15% 18%, transparent 19%)`,
+      backgroundSize: "42px 42px"
+    };
+  }
+
+  if (texture.kind === "opArtWaves") {
+    return {
+      backgroundColor: texture.background,
+      backgroundImage: `radial-gradient(ellipse at 50% 0%, transparent 0 42%, ${texture.foreground} 43% 50%, transparent 51%), radial-gradient(ellipse at 50% 100%, transparent 0 42%, ${texture.foreground} 43% 50%, transparent 51%)`,
+      backgroundSize: "34px 22px"
+    };
+  }
+
+  if (texture.kind === "popBurst") {
+    return {
+      backgroundColor: texture.background,
+      backgroundImage: `conic-gradient(from 0.12turn at 50% 50%, ${texture.foreground} 0 8%, transparent 8% 16%, ${texture.accent ?? texture.foreground} 16% 24%, transparent 24% 32%, ${texture.foreground} 32% 40%, transparent 40% 48%, ${texture.accent ?? texture.foreground} 48% 56%, transparent 56% 64%, ${texture.foreground} 64% 72%, transparent 72% 80%, ${texture.accent ?? texture.foreground} 80% 88%, transparent 88% 100%)`,
+      backgroundSize: "44px 44px"
     };
   }
 
