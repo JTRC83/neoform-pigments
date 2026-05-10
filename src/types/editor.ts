@@ -8,6 +8,7 @@ import type {
 
 export type EditorTool =
   | "select"
+  | "inverseSelection"
   | "pan"
   | "rectangle"
   | "ellipse"
@@ -61,6 +62,7 @@ export type CanvasObjectType =
   | "boltSharp"
   | "boltStep"
   | "image"
+  | "inverseSelection"
   | "text"
   | "textOutline"
   | "pencilStroke"
@@ -206,6 +208,12 @@ export type LibraryActionRequest =
       action: "add-visual-asset";
       asset: VisualAsset;
       requestId: number;
+    }
+  | {
+      action: "add-canvas-layer";
+      fill: string;
+      name: string;
+      requestId: number;
     };
 
 export type VisualAssetCategory =
@@ -224,6 +232,7 @@ export type VisualAsset = {
   kind?: "image" | "palette" | "mix";
   mimeType: string;
   name: string;
+  paletteLayout?: "line" | "grid" | "block";
   palette?: string[];
   sourceAssetId?: string;
 };
@@ -301,7 +310,8 @@ export type CanvasViewSettings = {
 
 export type CanvasGuide = {
   id: string;
-  orientation: "vertical" | "horizontal";
+  angle?: number;
+  orientation: "vertical" | "horizontal" | "diagonal-down" | "diagonal-up";
   position: number;
 };
 

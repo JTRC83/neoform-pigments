@@ -84,6 +84,7 @@ const shapeNames: Record<CanvasObjectType, string> = {
   boltSharp: "Sym Bolt",
   boltStep: "Step Bolt",
   image: "Image",
+  inverseSelection: "Inverse Selection",
   text: "Text",
   textOutline: "Text Outline",
   pencilStroke: "Pencil Stroke",

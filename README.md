@@ -38,6 +38,25 @@ http://127.0.0.1:5173/
 npm run build
 ```
 
+## PWA
+
+The app includes a first-pass PWA setup:
+
+- Web app manifest in `public/manifest.webmanifest`.
+- SVG and PNG app icons in `public/icons/`, including `192x192`, `512x512` and maskable variants.
+- Production-only service worker registration.
+- Offline app-shell cache for the editor shell, fonts, cursors and static assets.
+- User projects, imported images, palettes and final works remain local-first through IndexedDB/local storage.
+
+Test the installable build locally:
+
+```bash
+npm run build
+npm run preview
+```
+
+Open the preview URL and use the browser install option. The service worker is intentionally disabled during `npm run dev` so hot reload remains predictable.
+
 ## QA
 
 Run the baseline verification before pushing product changes:

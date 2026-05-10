@@ -48,8 +48,7 @@ import {
 import {
   deleteVisualAssetFromIndexedDb,
   loadVisualAssetsFromIndexedDb,
-  replaceVisualAssetsInIndexedDb,
-  saveVisualAssetToIndexedDb
+  replaceVisualAssetsInIndexedDb
 } from "../libraries/visualAssetStorage";
 import { defaultTextFontFamily } from "../utils/textFonts";
 
@@ -148,6 +147,7 @@ type EditorState = {
   requestApplyTexture: (texture: TexturePreset) => void;
   requestAddComposition: (composition: CompositionPreset) => void;
   requestAddVisualAssetToCanvas: (asset: VisualAsset) => void;
+  requestAddCanvasLayer: (fill: string, name: string) => void;
   loadVisualAssets: () => Promise<void>;
   addVisualAsset: (asset: VisualAsset) => void;
   deleteVisualAsset: (id: string) => void;
@@ -189,7 +189,7 @@ type EditorState = {
   toggleGrid: () => void;
   toggleGoldenRatio: () => void;
   addCanvasGuide: (orientation: CanvasGuide["orientation"]) => void;
-  updateCanvasGuide: (id: string, position: number) => void;
+  updateCanvasGuide: (id: string, position: number, angle?: number) => void;
   removeCanvasGuide: (id: string) => void;
   clearCanvasGuides: () => void;
   addArtboard: (format: CanvasFormat, orientation: CanvasOrientation) => void;
@@ -525,14 +525,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         requestId: (state.libraryActionRequest?.requestId ?? 0) + 1
       }
     })),
+  requestAddCanvasLayer: (fill, name) =>
+    set((state) => ({
+      libraryActionRequest: {
+        action: "add-canvas-layer",
+        fill,
+        name,
+        requestId: (state.libraryActionRequest?.requestId ?? 0) + 1
+      }
+    })),
   loadVisualAssets: async () => {
     const indexedDbAssets = await loadVisualAssetsFromIndexedDb();
     const legacyAssets = loadVisualAssetsFromLocalStorage();
-    const visualAssets = mergeVisualAssets(indexedDbAssets, legacyAssets);
+    const mergedVisualAssets = mergeVisualAssets(indexedDbAssets, legacyAssets);
+    const visualAssets = dedupeVisualAssetsByDataUrl(mergedVisualAssets);
 
     set({ visualAssets, visualAssetsLoaded: true });
 
-    if (legacyAssets.length > 0) {
+    if (legacyAssets.length > 0 || visualAssets.length !== mergedVisualAssets.length) {
       void replaceVisualAssetsInIndexedDb(visualAssets).then(() => {
         removeLegacyVisualAssetsFromLocalStorage();
       });
@@ -542,10 +552,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => {
       const visualAssets = [
         asset,
-        ...state.visualAssets.filter((item) => item.id !== asset.id)
+        ...state.visualAssets.filter(
+          (item) => item.id !== asset.id && item.dataUrl !== asset.dataUrl
+        )
       ];
 
-      void saveVisualAssetToIndexedDb(asset);
+      void replaceVisualAssetsInIndexedDb(visualAssets);
       return { visualAssets };
     }),
   deleteVisualAsset: (id) =>
@@ -869,6 +881,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         customGuides: [
           ...state.viewSettings.customGuides,
           {
+            angle: getInitialGuideAngle(orientation),
             id: crypto.randomUUID(),
             orientation,
             position: getNextGuidePosition(
@@ -879,13 +892,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ]
       }
     })),
-  updateCanvasGuide: (id, position) =>
+  updateCanvasGuide: (id, position, angle) =>
     set((state) => ({
       viewSettings: {
         ...state.viewSettings,
         customGuides: state.viewSettings.customGuides.map((guide) =>
           guide.id === id
-            ? { ...guide, position: clampGuidePosition(position) }
+            ? {
+                ...guide,
+                angle:
+                  angle === undefined
+                    ? guide.angle
+                    : clampGuideAngle(angle, guide.orientation),
+                position: clampGuidePosition(position)
+              }
             : guide
         )
       }
@@ -1144,6 +1164,29 @@ function clampGuidePosition(position: number) {
   return Math.min(Math.max(position, 0), 100);
 }
 
+function getInitialGuideAngle(orientation: CanvasGuide["orientation"]) {
+  if (orientation === "diagonal-down") {
+    return 45;
+  }
+
+  if (orientation === "diagonal-up") {
+    return -45;
+  }
+
+  return undefined;
+}
+
+function clampGuideAngle(
+  angle: number,
+  orientation: CanvasGuide["orientation"]
+) {
+  if (!Number.isFinite(angle)) {
+    return getInitialGuideAngle(orientation);
+  }
+
+  return Math.min(Math.max(angle, -78), 78);
+}
+
 function loadUserCompositionsFromLocalStorage(): SavedComposition[] {
   if (typeof localStorage === "undefined") {
     return [];
@@ -1219,6 +1262,23 @@ function mergeVisualAssets(
       new Date(secondAsset.createdAt).getTime() -
       new Date(firstAsset.createdAt).getTime()
   );
+}
+
+function dedupeVisualAssetsByDataUrl(assets: VisualAsset[]) {
+  const seenDataUrls = new Set<string>();
+
+  return assets.filter((asset) => {
+    if (!asset.dataUrl) {
+      return true;
+    }
+
+    if (seenDataUrls.has(asset.dataUrl)) {
+      return false;
+    }
+
+    seenDataUrls.add(asset.dataUrl);
+    return true;
+  });
 }
 
 function mergeUserCompositions(

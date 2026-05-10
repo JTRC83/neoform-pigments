@@ -1092,6 +1092,25 @@ export function CanvasEditor() {
         return;
       }
 
+      if (tool === "inverseSelection") {
+        const target = event.target as FabricObject | undefined;
+
+        if (target && target.get("name") !== "symmetry-guide") {
+          showVectorCutNotice("Haz click en el fondo para seleccionar el espacio libre.");
+          return;
+        }
+
+        void addInverseSelectionMaskToCanvas(canvas).then((mask) => {
+          if (!mask) {
+            return;
+          }
+
+          saveCurrentSnapshot();
+          pushHistory();
+        });
+        return;
+      }
+
       if (tool === "pan" || !isShapeTool(tool)) {
         return;
       }
@@ -2942,6 +2961,101 @@ async function addVisualAssetImageToCanvas(
   canvas.requestRenderAll();
   useEditorStore.getState().addCanvasObject(summary);
   syncSelectedObjectProperties(image);
+}
+
+async function addInverseSelectionMaskToCanvas(
+  canvas: ReturnType<typeof createFabricCanvas>
+) {
+  const state = useEditorStore.getState();
+  const currentArtboardId = state.activeArtboardId;
+  const canvasObjectIds = new Set(
+    state.canvasObjects
+      .filter((object) => object.artboardId === currentArtboardId)
+      .map((object) => object.id)
+  );
+  const sourceObjects = canvas
+    .getObjects()
+    .filter((object) => {
+      const objectId = String(object.get("id") ?? "");
+      const shapeKind = String(object.get("neoform-shape-kind") ?? "");
+
+      return (
+        canvasObjectIds.has(objectId) &&
+        shapeKind !== "inverseSelection" &&
+        object.get("name") !== "symmetry-guide" &&
+        object.get("name") !== "chainsaw-cut-preview" &&
+        isVectorCuttableObject(object)
+      );
+    });
+
+  if (sourceObjects.length === 0) {
+    showVectorCutNotice("No hay figuras visibles para invertir la seleccion.");
+    return null;
+  }
+
+  const geometries = (
+    await Promise.all(sourceObjects.map((object) => createBooleanCutGeometry(object)))
+  ).filter((geometry): geometry is BooleanCutGeometry => Boolean(geometry));
+  const objectMask = unionMultiPolygons(
+    geometries.map((geometry) => geometry.multiPolygon)
+  );
+
+  if (objectMask.length === 0) {
+    showVectorCutNotice("No se pudo leer la geometria de las figuras.");
+    return null;
+  }
+
+  const canvasBounds: ClipMultiPolygon = [
+    [
+      pointsToClipRing([
+        { x: 0, y: 0 },
+        { x: canvas.getWidth(), y: 0 },
+        { x: canvas.getWidth(), y: canvas.getHeight() },
+        { x: 0, y: canvas.getHeight() }
+      ])
+    ]
+  ];
+  const inverseMask = polygonClipping.difference(canvasBounds, objectMask);
+
+  if (inverseMask.length === 0 || getMultiPolygonArea(inverseMask) < 80) {
+    showVectorCutNotice("La seleccion inversa no tiene area suficiente.");
+    return null;
+  }
+
+  const objectNumber =
+    state.canvasObjects.filter((object) => object.artboardId === currentArtboardId)
+      .length + 1;
+  const summary = createShapeSummary(
+    "inverseSelection",
+    objectNumber,
+    currentArtboardId
+  );
+  const mask = new Path(createPathDataFromMultiPolygon(inverseMask), {
+    fill: "#ffffff",
+    fillRule: "evenodd",
+    objectCaching: false,
+    opacity: 0.86,
+    stroke: "#E9468A",
+    strokeDashArray: [10, 6],
+    strokeWidth: 2
+  });
+
+  mask.set({
+    id: summary.id,
+    name: summary.name
+  });
+  mask.set("neoform-shape-kind", "inverseSelection");
+  mask.set(vectorCutPolygonName, createLocalMultiPolygonForObject(mask, inverseMask));
+  mask.set(vectorCutPolygonSpaceName, "multiPolygon-local");
+  applyLayerState(mask, summary);
+  canvas.add(mask);
+  canvas.setActiveObject(mask);
+  canvas.requestRenderAll();
+  useEditorStore.getState().addCanvasObject(summary);
+  useEditorStore.getState().setActiveTool("select");
+  syncSelectedObjectProperties(mask);
+
+  return mask;
 }
 
 async function addCompositionToCanvas(

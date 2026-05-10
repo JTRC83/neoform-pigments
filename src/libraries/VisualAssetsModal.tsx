@@ -75,12 +75,28 @@ type VisualAssetsModalProps = {
   onClose: () => void;
 };
 
+type PaletteCandidate = {
+  blue: number;
+  color: string;
+  count: number;
+  green: number;
+  hue: number;
+  luminance: number;
+  red: number;
+  saturation: number;
+  score: number;
+};
+
+type PaletteLayout = "line" | "grid" | "block";
+
 export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingImportCategoryRef = useRef<VisualAssetCategory>("compositions");
   const [activeCategory, setActiveCategory] =
     useState<VisualAssetCategory>("compositions");
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [previewZoom, setPreviewZoom] = useState<"fit" | number>("fit");
   const [status, setStatus] = useState("");
   const visualAssets = useEditorStore((state) => state.visualAssets);
   const visualAssetsLoaded = useEditorStore((state) => state.visualAssetsLoaded);
@@ -140,34 +156,54 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
     }
   }, [activeCategory, filteredAssets, selectedAssetId]);
 
+  useEffect(() => {
+    setPreviewZoom("fit");
+  }, [activeCategory, selectedAssetId]);
+
   if (!isOpen) {
     return null;
   }
 
   const handleFileImport = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.currentTarget.files ?? []).filter((file) =>
+    const input = event.currentTarget;
+    const importCategory = pendingImportCategoryRef.current;
+    const files = Array.from(input.files ?? []).filter((file) =>
       file.type.startsWith("image/")
     );
 
     if (files.length === 0) {
-      event.currentTarget.value = "";
+      input.value = "";
       setStatus("No se han encontrado imagenes validas.");
       return;
     }
 
     const importedAssets = await Promise.all(
-      files.map((file) => createVisualAssetFromFile(file, activeCategory))
+      files.map((file) => createVisualAssetFromFile(file, importCategory))
     );
 
     importedAssets.forEach(addVisualAsset);
     setSelectedAssetId(importedAssets[0]?.id ?? null);
-    event.currentTarget.value = "";
-    setStatus(`${importedAssets.length} elementos importados en ${activeCategoryMeta.label}.`);
+    input.value = "";
+    setStatus(
+      `${importedAssets.length} elementos importados en ${getCategoryLabel(importCategory)}.`
+    );
+  };
+
+  const requestFileImport = (kind: "files" | "folder") => {
+    pendingImportCategoryRef.current = activeCategory;
+
+    if (kind === "files") {
+      fileInputRef.current?.click();
+      return;
+    }
+
+    folderInputRef.current?.click();
   };
 
   const handleUseAsset = (asset: VisualAsset) => {
     requestAddVisualAssetToCanvas(asset);
-    setStatus(`${asset.name} enviada al lienzo activo.`);
+    setStatus(`${asset.name} abierta en el lienzo activo.`);
+    onClose();
   };
 
   const handleApplyPaletteColor = (asset: VisualAsset, color: string) => {
@@ -236,6 +272,37 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
     setStatus("Mezcla de pigmentos guardada.");
   };
 
+  const handleReextractPalette = async (asset: VisualAsset) => {
+    const palette = await extractPaletteFromImage(asset.dataUrl).catch(() => []);
+
+    if (palette.length === 0) {
+      setStatus(`No se pudo extraer paleta de ${asset.name}.`);
+      return;
+    }
+
+    addVisualAsset({ ...asset, palette });
+    setSelectedAssetId(asset.id);
+    setStatus(`${palette.length} colores reextraidos desde ${asset.name}.`);
+  };
+
+  const handlePaletteLayoutChange = (asset: VisualAsset, layout: PaletteLayout) => {
+    const colors = asset.palette ?? [];
+
+    if (colors.length === 0) {
+      setStatus("Esta paleta no tiene colores para reorganizar.");
+      return;
+    }
+
+    addVisualAsset({
+      ...asset,
+      dataUrl: createPaletteSvgDataUrl(colors, asset.name, layout),
+      mimeType: "image/svg+xml",
+      paletteLayout: layout
+    });
+    setSelectedAssetId(asset.id);
+    setStatus(`Paleta organizada en formato ${getPaletteLayoutLabel(layout)}.`);
+  };
+
   const moveSelection = (direction: "next" | "previous") => {
     if (filteredAssets.length === 0) {
       return;
@@ -266,7 +333,7 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
             Biblioteca visual
           </h2>
           <p className="text-[11px] font-black uppercase text-ink/70">
-            Mini-Bridge local: carpetas, preview, carrete e importacion directa
+            Mini-Bridge local: carpetas, preview, carrete y apertura directa
           </p>
         </div>
         <div className="ml-auto hidden border-2 border-ink bg-paper px-3 py-2 text-[10px] font-black uppercase shadow-brutal-sm md:block">
@@ -338,7 +405,7 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
           </div>
         </aside>
 
-        <main className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_156px] overflow-hidden p-4">
+        <main className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-4">
           <input
             ref={fileInputRef}
             type="file"
@@ -372,13 +439,18 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
                 {selectedAsset.name}
               </div>
             ) : null}
+            {status ? (
+              <div className="max-w-sm truncate border-2 border-ink bg-pollen px-2 py-1 text-[10px] font-black uppercase shadow-brutal-sm">
+                {status}
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={() => selectedAsset && handleUseAsset(selectedAsset)}
               disabled={!selectedAsset}
               className="border-2 border-ink bg-punch px-3 py-2 text-[10px] font-black uppercase text-paper shadow-brutal-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              Importar al lienzo
+              Abrir en lienzo
             </button>
             {selectedAsset?.palette?.[0] ? (
               <button
@@ -391,7 +463,7 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
             ) : null}
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => requestFileImport("files")}
               className="ml-auto flex h-9 items-center gap-2 border-2 border-ink bg-pollen px-3 text-[10px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5"
             >
               <Upload size={14} />
@@ -399,19 +471,13 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
             </button>
             <button
               type="button"
-              onClick={() => folderInputRef.current?.click()}
+              onClick={() => requestFileImport("folder")}
               className="flex h-9 items-center gap-2 border-2 border-ink bg-paper px-3 text-[10px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5"
             >
               <Upload size={14} />
               Importar carpeta
             </button>
           </div>
-
-          {status ? (
-            <div className="mt-3 border-2 border-ink bg-pollen px-3 py-2 text-[11px] font-black uppercase shadow-brutal-sm">
-              {status}
-            </div>
-          ) : null}
 
           {filteredAssets.length === 0 ? (
             <div className="mt-4 grid min-h-0 place-items-center border-2 border-dashed border-ink bg-bone p-8 text-center">
@@ -437,14 +503,70 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
                   <ChevronLeft size={22} />
                 </button>
 
-                <div className="grid min-h-0 place-items-center overflow-hidden border-2 border-ink bg-neutral-950 p-4 shadow-brutal-sm">
-                  {selectedAsset ? (
-                    <img
-                      src={selectedAsset.dataUrl}
-                      alt={selectedAsset.name}
-                      className="max-h-full max-w-full object-contain"
+                <div className="relative grid min-h-0 place-items-center overflow-hidden border-2 border-ink bg-neutral-950 p-4 shadow-brutal-sm">
+                  <div className="absolute left-3 top-3 z-10 flex items-center gap-2 border-2 border-ink bg-paper/95 px-2 py-1 text-[9px] font-black uppercase shadow-brutal-sm">
+                    <span>Tamano</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPreviewZoom((zoom) =>
+                          Math.max(45, (zoom === "fit" ? 100 : zoom) - 15)
+                        )
+                      }
+                      className="border border-ink px-1"
+                      title="Reducir preview"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="range"
+                      min="45"
+                      max="100"
+                      step="5"
+                      value={previewZoom === "fit" ? 100 : previewZoom}
+                      onChange={(event) => setPreviewZoom(Number(event.target.value))}
+                      className="h-2 w-28 accent-punch"
+                      aria-label="Tamano preview"
                     />
-                  ) : null}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPreviewZoom((zoom) =>
+                          Math.min(100, (zoom === "fit" ? 100 : zoom) + 15)
+                        )
+                      }
+                      className="border border-ink px-1"
+                      title="Aumentar preview sin recortar"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewZoom("fit")}
+                      className="border border-ink px-1"
+                      title="Ajustar imagen completa"
+                    >
+                      Fit
+                    </button>
+                    <span>{previewZoom === "fit" ? "Fit" : `${previewZoom}%`}</span>
+                  </div>
+                  <div className="grid h-full min-h-0 w-full min-w-0 place-items-center overflow-hidden">
+                    {selectedAsset ? (
+                      <img
+                        src={selectedAsset.dataUrl}
+                        alt={selectedAsset.name}
+                        className="h-full w-full object-contain"
+                        style={{
+                          transform:
+                            previewZoom === "fit"
+                              ? "scale(1)"
+                              : `scale(${previewZoom / 100})`,
+                          transformOrigin: "center center",
+                          transition: "transform 120ms ease-out"
+                        }}
+                      />
+                    ) : null}
+                  </div>
                 </div>
 
                 <button
@@ -498,15 +620,46 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
                           <p className="mt-1 break-words text-[9px] font-black uppercase text-ink/60">
                             Click en un color para aplicarlo al objeto seleccionado.
                           </p>
+                          {selectedAsset.kind === "palette" ||
+                          selectedAsset.kind === "mix" ? (
+                            <div className="mt-3 grid grid-cols-3 gap-1">
+                              {(["line", "grid", "block"] as PaletteLayout[]).map(
+                                (layout) => (
+                                  <button
+                                    key={layout}
+                                    type="button"
+                                    onClick={() =>
+                                      handlePaletteLayoutChange(selectedAsset, layout)
+                                    }
+                                    className={clsx(
+                                      "border-2 border-ink px-1.5 py-1 text-[8px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5",
+                                      (selectedAsset.paletteLayout ?? "block") === layout
+                                        ? "bg-mineral"
+                                        : "bg-paper"
+                                    )}
+                                  >
+                                    {getPaletteLayoutLabel(layout)}
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                       <div className="mt-4 grid gap-2">
                         <button
                           type="button"
+                          onClick={() => void handleReextractPalette(selectedAsset)}
+                          className="border-2 border-ink bg-paper px-2 py-2 text-[10px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5"
+                        >
+                          Reextraer paleta
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleUseAsset(selectedAsset)}
                           className="border-2 border-ink bg-punch px-2 py-2 text-[10px] font-black uppercase text-paper shadow-brutal-sm transition hover:-translate-y-0.5"
                         >
-                          Importar al lienzo
+                          Abrir en lienzo
                         </button>
                         {selectedAsset.palette?.length ? (
                           <>
@@ -540,39 +693,41 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
               </section>
 
               <section className="mt-3 min-h-0 border-2 border-ink bg-bone p-2 shadow-brutal-sm">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-[10px] font-black uppercase">
                     Carrete de {activeCategoryMeta.label}
                   </h4>
                   <p className="text-[9px] font-black uppercase text-ink/60">
-                    Click para previsualizar · doble click para importar
+                    Click para previsualizar · doble click para abrir en lienzo
                   </p>
                 </div>
-                <div className="flex h-[104px] gap-2 overflow-x-auto pb-1">
-                  {filteredAssets.map((asset) => (
-                    <button
-                      key={asset.id}
-                      type="button"
-                      onClick={() => setSelectedAssetId(asset.id)}
-                      onDoubleClick={() => handleUseAsset(asset)}
-                      className={clsx(
-                        "h-24 w-28 shrink-0 border-2 p-1 shadow-brutal-sm transition hover:-translate-y-0.5",
-                        selectedAsset?.id === asset.id
-                          ? "border-punch bg-mineral"
-                          : "border-ink bg-paper"
-                      )}
-                      title={asset.name}
-                    >
-                      <img
-                        src={asset.dataUrl}
-                        alt={asset.name}
-                        className="h-16 w-full border-2 border-ink bg-bone object-cover"
-                      />
-                      <span className="mt-1 block truncate text-[8px] font-black uppercase">
-                        {asset.name}
-                      </span>
-                    </button>
-                  ))}
+                <div className="h-[96px] overflow-x-auto pb-1">
+                  <div className="flex h-full gap-2">
+                    {filteredAssets.map((asset) => (
+                      <button
+                        key={asset.id}
+                        type="button"
+                        onClick={() => setSelectedAssetId(asset.id)}
+                        onDoubleClick={() => handleUseAsset(asset)}
+                        className={clsx(
+                          "flex shrink-0 flex-col border-2 p-1 shadow-brutal-sm transition hover:-translate-y-0.5",
+                          selectedAsset?.id === asset.id
+                            ? "border-punch bg-mineral"
+                            : "border-ink bg-paper"
+                        )}
+                        title={asset.name}
+                      >
+                        <img
+                          src={asset.dataUrl}
+                          alt={asset.name}
+                          className="h-14 w-24 border-2 border-ink bg-bone object-cover"
+                        />
+                        <span className="mt-1 block truncate text-[8px] font-black uppercase">
+                          {asset.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </section>
             </>
@@ -615,12 +770,14 @@ function createPaletteVisualAsset({
   category,
   colors,
   kind,
+  layout = "block",
   name,
   sourceAssetId
 }: {
   category: VisualAssetCategory;
   colors: string[];
   kind: "palette" | "mix";
+  layout?: PaletteLayout;
   name: string;
   sourceAssetId?: string;
 }): VisualAsset {
@@ -628,11 +785,12 @@ function createPaletteVisualAsset({
     id: crypto.randomUUID(),
     category,
     createdAt: new Date().toISOString(),
-    dataUrl: createPaletteSvgDataUrl(colors, name),
+    dataUrl: createPaletteSvgDataUrl(colors, name, layout),
     kind,
     mimeType: "image/svg+xml",
     name,
     palette: colors,
+    paletteLayout: layout,
     sourceAssetId
   };
 }
@@ -664,31 +822,109 @@ function getAssetKindLabel(asset: VisualAsset) {
   return "Imagen";
 }
 
-function createPaletteSvgDataUrl(colors: string[], title: string) {
+function getCategoryLabel(categoryId: VisualAssetCategory) {
+  return (
+    visualAssetCategories.find((category) => category.id === categoryId)?.label ??
+    categoryId
+  );
+}
+
+function getPaletteLayoutLabel(layout: PaletteLayout) {
+  if (layout === "line") {
+    return "Linea";
+  }
+
+  if (layout === "grid") {
+    return "Cuadro";
+  }
+
+  return "Bloque";
+}
+
+function createPaletteSvgDataUrl(
+  colors: string[],
+  title: string,
+  layout: PaletteLayout = "block"
+) {
   const safeTitle = escapeSvgText(title);
-  const swatchWidth = 96;
-  const width = Math.max(1, colors.length) * swatchWidth;
-  const height = 140;
-  const swatches = colors
-    .map(
-      (color, index) => `
-        <rect x="${index * swatchWidth}" y="0" width="${swatchWidth}" height="96" fill="${color}" />
-        <text x="${index * swatchWidth + 8}" y="118" font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#111">${color}</text>
-      `
-    )
-    .join("");
+  const sortedColors = layout === "grid" ? sortColorsBySimilarity(colors) : colors;
+  const paletteSvg = createPaletteLayoutSvg(sortedColors, layout);
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <svg xmlns="http://www.w3.org/2000/svg" width="${paletteSvg.width}" height="${paletteSvg.height}" viewBox="0 0 ${paletteSvg.width} ${paletteSvg.height}">
       <rect width="100%" height="100%" fill="#F7E7B7" />
-      ${swatches}
-      <text x="8" y="136" font-family="Arial, sans-serif" font-size="10" font-weight="900" fill="#111">${safeTitle}</text>
+      ${paletteSvg.content}
+      <text x="12" y="${paletteSvg.height - 12}" font-family="Arial, sans-serif" font-size="12" font-weight="900" fill="#111">${safeTitle}</text>
     </svg>
   `;
 
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-async function extractPaletteFromImage(dataUrl: string, maxColors = 8) {
+function createPaletteLayoutSvg(colors: string[], layout: PaletteLayout) {
+  if (layout === "line") {
+    const swatchWidth = 96;
+    const width = Math.max(1, colors.length) * swatchWidth;
+    const height = 148;
+    const content = colors
+      .map(
+        (color, index) => `
+          <rect x="${index * swatchWidth}" y="0" width="${swatchWidth}" height="102" fill="${color}" />
+          <text x="${index * swatchWidth + 8}" y="126" font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#111">${color}</text>
+        `
+      )
+      .join("");
+
+    return { content, height, width };
+  }
+
+  if (layout === "grid") {
+    const columns = Math.ceil(Math.sqrt(colors.length));
+    const swatchSize = 86;
+    const labelHeight = 22;
+    const rows = Math.ceil(colors.length / columns);
+    const width = columns * swatchSize;
+    const height = rows * (swatchSize + labelHeight) + 30;
+    const content = colors
+      .map((color, index) => {
+        const column = index % columns;
+        const row = Math.floor(index / columns);
+        const x = column * swatchSize;
+        const y = row * (swatchSize + labelHeight);
+
+        return `
+          <rect x="${x}" y="${y}" width="${swatchSize}" height="${swatchSize}" fill="${color}" />
+          <text x="${x + 8}" y="${y + swatchSize + 16}" font-family="Arial, sans-serif" font-size="10" font-weight="800" fill="#111">${color}</text>
+        `;
+      })
+      .join("");
+
+    return { content, height, width };
+  }
+
+  const columns = 4;
+  const gap = 10;
+  const swatchWidth = 118;
+  const swatchHeight = 62;
+  const rows = Math.ceil(colors.length / columns);
+  const width = columns * swatchWidth + (columns + 1) * gap;
+  const height = rows * swatchHeight + (rows + 1) * gap + 34;
+  const content = colors
+    .map((color, index) => {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const x = gap + column * (swatchWidth + gap);
+      const y = gap + row * (swatchHeight + gap);
+
+      return `
+        <rect x="${x}" y="${y}" width="${swatchWidth}" height="${swatchHeight}" fill="${color}" stroke="#111" stroke-width="4" />
+      `;
+    })
+    .join("");
+
+  return { content, height, width };
+}
+
+async function extractPaletteFromImage(dataUrl: string, maxColors = 16) {
   const image = await loadImage(dataUrl);
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -697,35 +933,138 @@ async function extractPaletteFromImage(dataUrl: string, maxColors = 8) {
     return [];
   }
 
-  const maxSize = 96;
+  const maxSize = 160;
   const ratio = Math.min(maxSize / image.width, maxSize / image.height, 1);
   canvas.width = Math.max(1, Math.round(image.width * ratio));
   canvas.height = Math.max(1, Math.round(image.height * ratio));
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-  const counts = new Map<string, number>();
+  const buckets = new Map<
+    string,
+    { blue: number; count: number; green: number; red: number }
+  >();
+  const pixelStride = Math.max(
+    1,
+    Math.floor((canvas.width * canvas.height) / 22000)
+  );
 
-  for (let index = 0; index < pixels.length; index += 16) {
+  for (let index = 0; index < pixels.length; index += 4 * pixelStride) {
     const alpha = pixels[index + 3] ?? 255;
 
     if (alpha < 128) {
       continue;
     }
 
-    const color = rgbToHex(
-      quantizeColor(pixels[index] ?? 0),
-      quantizeColor(pixels[index + 1] ?? 0),
-      quantizeColor(pixels[index + 2] ?? 0)
-    );
+    const red = pixels[index] ?? 0;
+    const green = pixels[index + 1] ?? 0;
+    const blue = pixels[index + 2] ?? 0;
+    const key = [
+      quantizeColor(red),
+      quantizeColor(green),
+      quantizeColor(blue)
+    ].join("-");
+    const bucket = buckets.get(key) ?? { blue: 0, count: 0, green: 0, red: 0 };
 
-    counts.set(color, (counts.get(color) ?? 0) + 1);
+    bucket.red += red;
+    bucket.green += green;
+    bucket.blue += blue;
+    bucket.count += 1;
+    buckets.set(key, bucket);
   }
 
-  return Array.from(counts.entries())
-    .sort((firstEntry, secondEntry) => secondEntry[1] - firstEntry[1])
-    .map(([color]) => color)
-    .slice(0, maxColors);
+  const candidates: PaletteCandidate[] = Array.from(buckets.values())
+    .filter((bucket) => bucket.count >= 1)
+    .map((bucket) => {
+      const red = Math.round(bucket.red / bucket.count);
+      const green = Math.round(bucket.green / bucket.count);
+      const blue = Math.round(bucket.blue / bucket.count);
+      const saturation = getRgbSaturation(red, green, blue);
+      const luminance = getRgbLuminance(red, green, blue);
+      const hue = getRgbHue(red, green, blue);
+
+      return {
+        blue,
+        color: rgbToHex(red, green, blue),
+        count: bucket.count,
+        green,
+        hue,
+        luminance,
+        red,
+        score:
+          Math.log1p(bucket.count) *
+          (0.35 + saturation * 7 + Math.abs(luminance - 0.52) * 0.2),
+        saturation
+      };
+    })
+    .sort((firstColor, secondColor) => secondColor.score - firstColor.score);
+
+  const broadHueRepresentatives = Array.from(
+    candidates
+      .filter((candidate) => candidate.saturation > 0.18)
+      .reduce<Map<number, PaletteCandidate>>((groups, candidate) => {
+        const hueGroup = Math.floor(candidate.hue / 30);
+        const current = groups.get(hueGroup);
+
+        if (!current || candidate.score > current.score) {
+          groups.set(hueGroup, candidate);
+        }
+
+        return groups;
+      }, new Map())
+      .values()
+  ).sort((firstColor, secondColor) => firstColor.hue - secondColor.hue);
+  const fineHueRepresentatives = Array.from(
+    candidates
+      .filter((candidate) => candidate.saturation > 0.34)
+      .reduce<Map<number, PaletteCandidate>>((groups, candidate) => {
+        const hueGroup = Math.floor(candidate.hue / 15);
+        const current = groups.get(hueGroup);
+
+        if (!current || candidate.score > current.score) {
+          groups.set(hueGroup, candidate);
+        }
+
+        return groups;
+      }, new Map())
+      .values()
+  ).sort((firstColor, secondColor) => secondColor.score - firstColor.score);
+  const strongAccents = candidates
+    .filter((candidate) => candidate.saturation > 0.45)
+    .sort((firstColor, secondColor) => secondColor.score - firstColor.score);
+  const lightAndDarkAnchors = candidates
+    .filter(
+      (candidate) =>
+        candidate.luminance < 0.22 ||
+        candidate.luminance > 0.82 ||
+        candidate.saturation < 0.12
+    )
+    .sort((firstColor, secondColor) => secondColor.count - firstColor.count)
+    .slice(0, 16);
+  const selectionPool = uniquePaletteCandidates([
+    ...broadHueRepresentatives,
+    ...fineHueRepresentatives,
+    ...strongAccents,
+    ...lightAndDarkAnchors,
+    ...candidates.slice(0, 120)
+  ]);
+  const selected = selectDiversePalette(selectionPool, maxColors, 26);
+
+  if (selected.length < maxColors) {
+    selected.push(
+      ...selectDiversePalette(
+        selectionPool.filter(
+          (candidate) =>
+            !selected.some((color) => color.color === candidate.color)
+        ),
+        maxColors - selected.length,
+        14,
+        selected
+      )
+    );
+  }
+
+  return uniqueColors(selected.map((color) => color.color)).slice(0, maxColors);
 }
 
 function loadImage(dataUrl: string) {
@@ -739,7 +1078,92 @@ function loadImage(dataUrl: string) {
 }
 
 function quantizeColor(value: number) {
-  return Math.min(255, Math.max(0, Math.round(value / 24) * 24));
+  return Math.min(255, Math.max(0, Math.round(value / 18) * 18));
+}
+
+function selectDiversePalette(
+  candidates: PaletteCandidate[],
+  maxColors: number,
+  minDistance: number,
+  initialPalette: PaletteCandidate[] = []
+) {
+  const selected = [...initialPalette];
+
+  candidates.forEach((candidate) => {
+    if (selected.length >= maxColors + initialPalette.length) {
+      return;
+    }
+
+    const isFarEnough = selected.every(
+      (color) => getRgbDistance(candidate, color) >= minDistance
+    );
+
+    if (isFarEnough) {
+      selected.push(candidate);
+    }
+  });
+
+  return selected.slice(initialPalette.length);
+}
+
+function uniquePaletteCandidates(candidates: PaletteCandidate[]) {
+  const seen = new Set<string>();
+
+  return candidates.filter((candidate) => {
+    if (seen.has(candidate.color)) {
+      return false;
+    }
+
+    seen.add(candidate.color);
+    return true;
+  });
+}
+
+function getRgbDistance(
+  firstColor: { blue: number; green: number; red: number },
+  secondColor: { blue: number; green: number; red: number }
+) {
+  return Math.sqrt(
+    (firstColor.red - secondColor.red) ** 2 +
+      (firstColor.green - secondColor.green) ** 2 +
+      (firstColor.blue - secondColor.blue) ** 2
+  );
+}
+
+function getRgbSaturation(red: number, green: number, blue: number) {
+  const max = Math.max(red, green, blue) / 255;
+  const min = Math.min(red, green, blue) / 255;
+
+  return max === 0 ? 0 : (max - min) / max;
+}
+
+function getRgbHue(red: number, green: number, blue: number) {
+  const normalizedRed = red / 255;
+  const normalizedGreen = green / 255;
+  const normalizedBlue = blue / 255;
+  const max = Math.max(normalizedRed, normalizedGreen, normalizedBlue);
+  const min = Math.min(normalizedRed, normalizedGreen, normalizedBlue);
+  const delta = max - min;
+
+  if (delta === 0) {
+    return 0;
+  }
+
+  let hue = 0;
+
+  if (max === normalizedRed) {
+    hue = ((normalizedGreen - normalizedBlue) / delta) % 6;
+  } else if (max === normalizedGreen) {
+    hue = (normalizedBlue - normalizedRed) / delta + 2;
+  } else {
+    hue = (normalizedRed - normalizedGreen) / delta + 4;
+  }
+
+  return (Math.round(hue * 60) + 360) % 360;
+}
+
+function getRgbLuminance(red: number, green: number, blue: number) {
+  return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
 }
 
 function rgbToHex(red: number, green: number, blue: number) {
@@ -768,6 +1192,25 @@ function hexToRgb(color: string) {
     green: Number.parseInt(hex.slice(2, 4), 16),
     blue: Number.parseInt(hex.slice(4, 6), 16)
   };
+}
+
+function sortColorsBySimilarity(colors: string[]) {
+  return [...colors].sort((firstColor, secondColor) => {
+    const firstRgb = hexToRgb(firstColor);
+    const secondRgb = hexToRgb(secondColor);
+    const hueDifference =
+      getRgbHue(firstRgb.red, firstRgb.green, firstRgb.blue) -
+      getRgbHue(secondRgb.red, secondRgb.green, secondRgb.blue);
+
+    if (Math.abs(hueDifference) > 8) {
+      return hueDifference;
+    }
+
+    return (
+      getRgbLuminance(firstRgb.red, firstRgb.green, firstRgb.blue) -
+      getRgbLuminance(secondRgb.red, secondRgb.green, secondRgb.blue)
+    );
+  });
 }
 
 function uniqueColors(colors: string[]) {

@@ -5,9 +5,16 @@ import type { CanvasGuide } from "../types/editor";
 type CanvasGuidesProps = {
   customGuides: CanvasGuide[];
   onRemoveGuide: (id: string) => void;
-  onUpdateGuide: (id: string, position: number) => void;
+  onUpdateGuide: (id: string, position: number, angle?: number) => void;
   showGrid: boolean;
   showGoldenRatio: boolean;
+};
+
+type DiagonalGuideHandle = "line" | "start" | "end";
+
+type GuidePoint = {
+  x: number;
+  y: number;
 };
 
 export function CanvasGuides({
@@ -49,16 +56,29 @@ function CustomGuides({
 }: {
   guides: CanvasGuide[];
   onRemoveGuide: (id: string) => void;
-  onUpdateGuide: (id: string, position: number) => void;
+  onUpdateGuide: (id: string, position: number, angle?: number) => void;
 }) {
   if (guides.length === 0) {
     return null;
   }
 
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0" data-guide-layer="true">
       {guides.map((guide) => {
         const isVertical = guide.orientation === "vertical";
+        const isHorizontal = guide.orientation === "horizontal";
+        const isDiagonal = !isVertical && !isHorizontal;
+
+        if (isDiagonal) {
+          return (
+            <DiagonalGuide
+              key={guide.id}
+              guide={guide}
+              onRemoveGuide={onRemoveGuide}
+              onUpdateGuide={onUpdateGuide}
+            />
+          );
+        }
 
         return (
           <div
@@ -91,7 +111,9 @@ function CustomGuides({
               type="button"
               className={clsx(
                 "pointer-events-auto absolute grid h-5 w-5 place-items-center border-2 border-ink bg-punch text-[11px] font-black leading-none text-paper opacity-90 shadow-brutal-sm transition hover:-translate-y-0.5",
-                isVertical ? "left-1/2 top-1 -translate-x-1/2" : "left-1 top-1/2 -translate-y-1/2"
+                isVertical
+                  ? "left-1/2 top-1 -translate-x-1/2"
+                  : "left-1 top-1/2 -translate-y-1/2"
               )}
               onClick={(event) => {
                 event.stopPropagation();
@@ -110,28 +132,150 @@ function CustomGuides({
   );
 }
 
+function DiagonalGuide({
+  guide,
+  onRemoveGuide,
+  onUpdateGuide
+}: {
+  guide: CanvasGuide;
+  onRemoveGuide: (id: string) => void;
+  onUpdateGuide: (id: string, position: number, angle?: number) => void;
+}) {
+  const line = getDiagonalGuideLine(guide);
+  const midpoint = getLineMidpoint(line.start, line.end);
+
+  return (
+    <div className="pointer-events-none absolute inset-0 group">
+      <svg
+        className="pointer-events-none absolute inset-0 h-full w-full"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <line
+          className="pointer-events-auto cursor-move"
+          x1={line.start.x}
+          y1={line.start.y}
+          x2={line.end.x}
+          y2={line.end.y}
+          stroke="transparent"
+          strokeWidth="8"
+          onPointerDown={(event) =>
+            handleGuideDragStart(event, guide, onUpdateGuide, "line")
+          }
+        />
+        <line
+          x1={line.start.x}
+          y1={line.start.y}
+          x2={line.end.x}
+          y2={line.end.y}
+          stroke="rgb(var(--color-cobalt))"
+          strokeWidth="0.45"
+          vectorEffect="non-scaling-stroke"
+          strokeDasharray="8 5"
+        />
+      </svg>
+
+      <GuideHandle
+        label="A"
+        point={line.start}
+        title="Mover este extremo y anclar el opuesto"
+        onPointerDown={(event) =>
+          handleGuideDragStart(event, guide, onUpdateGuide, "start")
+        }
+      />
+      <GuideHandle
+        label="B"
+        point={line.end}
+        title="Mover este extremo y anclar el opuesto"
+        onPointerDown={(event) =>
+          handleGuideDragStart(event, guide, onUpdateGuide, "end")
+        }
+      />
+      <button
+        type="button"
+        className="pointer-events-auto absolute grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 place-items-center border-2 border-ink bg-punch text-[11px] font-black leading-none text-paper opacity-90 shadow-brutal-sm transition hover:-translate-y-0.5"
+        style={{ left: `${midpoint.x}%`, top: `${midpoint.y}%` }}
+        onClick={(event) => {
+          event.stopPropagation();
+          onRemoveGuide(guide.id);
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+        aria-label="Remove diagonal guide"
+        title="Eliminar guía"
+      >
+        x
+      </button>
+    </div>
+  );
+}
+
+function GuideHandle({
+  label,
+  onPointerDown,
+  point,
+  title
+}: {
+  label: string;
+  onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  point: GuidePoint;
+  title: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="pointer-events-auto absolute grid h-6 w-6 -translate-x-1/2 -translate-y-1/2 place-items-center border-2 border-ink bg-pollen text-[9px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5"
+      style={{ left: `${point.x}%`, top: `${point.y}%` }}
+      onPointerDown={onPointerDown}
+      title={title}
+      aria-label={title}
+    >
+      {label}
+    </button>
+  );
+}
+
 function handleGuideDragStart(
-  event: ReactPointerEvent<HTMLDivElement>,
+  event: ReactPointerEvent<Element>,
   guide: CanvasGuide,
-  onUpdateGuide: (id: string, position: number) => void
+  onUpdateGuide: (id: string, position: number, angle?: number) => void,
+  handle: DiagonalGuideHandle = "line"
 ) {
   event.preventDefault();
   event.stopPropagation();
 
-  const guideContainer = event.currentTarget.parentElement;
+  const guideContainer = event.currentTarget.closest("[data-guide-layer]");
   const canvasRect = guideContainer?.getBoundingClientRect();
 
   if (!canvasRect) {
     return;
   }
 
-  const updateGuidePosition = (pointerEvent: PointerEvent) => {
-    const nextPosition =
-      guide.orientation === "vertical"
-        ? ((pointerEvent.clientX - canvasRect.left) / canvasRect.width) * 100
-        : ((pointerEvent.clientY - canvasRect.top) / canvasRect.height) * 100;
+  const initialLine = getDiagonalGuideLine(guide);
+  const anchor =
+    handle === "start"
+      ? initialLine.end
+      : handle === "end"
+        ? initialLine.start
+        : null;
 
-    onUpdateGuide(guide.id, nextPosition);
+  const updateGuidePosition = (pointerEvent: PointerEvent) => {
+    const x = ((pointerEvent.clientX - canvasRect.left) / canvasRect.width) * 100;
+    const y = ((pointerEvent.clientY - canvasRect.top) / canvasRect.height) * 100;
+
+    if (anchor) {
+      const angle = normalizeGuideAngle(
+        Math.atan2(y - anchor.y, x - anchor.x) * (180 / Math.PI)
+      );
+      const position = getDiagonalPositionForAngle(anchor, angle);
+
+      onUpdateGuide(guide.id, position, angle);
+      return;
+    }
+
+    const nextPosition = getGuidePositionFromPointer(guide, x, y);
+
+    onUpdateGuide(guide.id, nextPosition, guide.angle);
   };
 
   const stopDragging = () => {
@@ -142,6 +286,108 @@ function handleGuideDragStart(
   updateGuidePosition(event.nativeEvent);
   window.addEventListener("pointermove", updateGuidePosition);
   window.addEventListener("pointerup", stopDragging);
+}
+
+function getGuidePositionFromPointer(
+  guide: CanvasGuide,
+  x: number,
+  y: number
+) {
+  if (guide.orientation === "vertical") {
+    return x;
+  }
+
+  if (guide.orientation === "horizontal") {
+    return y;
+  }
+
+  const angle = getGuideAngle(guide);
+
+  return getDiagonalPositionForAngle({ x, y }, angle);
+}
+
+function getDiagonalGuideLine(guide: CanvasGuide) {
+  const angle = getGuideAngle(guide);
+  const slope = Math.tan(angle * (Math.PI / 180));
+  const candidates: GuidePoint[] = [
+    { x: 0, y: guide.position - slope * 50 },
+    { x: 100, y: guide.position + slope * 50 }
+  ];
+
+  if (Math.abs(slope) > 0.001) {
+    candidates.push(
+      { x: 50 - guide.position / slope, y: 0 },
+      { x: 50 + (100 - guide.position) / slope, y: 100 }
+    );
+  }
+
+  const points = dedupeGuidePoints(
+    candidates.filter(
+      (point) =>
+        point.x >= -0.1 &&
+        point.x <= 100.1 &&
+        point.y >= -0.1 &&
+        point.y <= 100.1
+    )
+  );
+
+  const sortedPoints = points.sort((a, b) => a.x - b.x || a.y - b.y);
+
+  return {
+    end: sortedPoints[sortedPoints.length - 1] ?? { x: 100, y: guide.position },
+    start: sortedPoints[0] ?? { x: 0, y: guide.position }
+  };
+}
+
+function getGuideAngle(guide: CanvasGuide) {
+  if (typeof guide.angle === "number") {
+    return guide.angle;
+  }
+
+  if (guide.orientation === "diagonal-down") {
+    return 45;
+  }
+
+  return -45;
+}
+
+function getDiagonalPositionForAngle(point: GuidePoint, angle: number) {
+  const slope = Math.tan(angle * (Math.PI / 180));
+
+  return point.y - slope * (point.x - 50);
+}
+
+function normalizeGuideAngle(angle: number) {
+  let normalizedAngle = angle;
+
+  while (normalizedAngle > 90) {
+    normalizedAngle -= 180;
+  }
+
+  while (normalizedAngle < -90) {
+    normalizedAngle += 180;
+  }
+
+  return Math.min(Math.max(normalizedAngle, -78), 78);
+}
+
+function getLineMidpoint(start: GuidePoint, end: GuidePoint) {
+  return {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2
+  };
+}
+
+function dedupeGuidePoints(points: GuidePoint[]) {
+  return points.filter(
+    (point, index) =>
+      !points.some(
+        (otherPoint, otherIndex) =>
+          otherIndex < index &&
+          Math.abs(otherPoint.x - point.x) < 0.01 &&
+          Math.abs(otherPoint.y - point.y) < 0.01
+      )
+  );
 }
 
 function GoldenRatioOverlay() {

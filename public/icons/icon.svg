@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="N€O FORM & PIGM€NT$ icon">
+  <rect width="512" height="512" fill="#FFE900"/>
+  <rect x="28" y="28" width="456" height="456" fill="#F7E7B7" stroke="#101010" stroke-width="18"/>
+  <path d="M74 362V150h58l94 116V150h62v212h-58l-94-118v118H74Z" fill="#101010"/>
+  <circle cx="374" cy="204" r="70" fill="#E9468A" stroke="#101010" stroke-width="14"/>
+  <rect x="320" y="282" width="128" height="80" fill="#00C7B7" stroke="#101010" stroke-width="14"/>
+  <path d="M324 408 438 96" stroke="#FF7A1A" stroke-width="26" stroke-linecap="square"/>
+</svg>

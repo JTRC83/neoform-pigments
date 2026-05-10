@@ -676,6 +676,22 @@ export function RightPanel() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => addCanvasGuide("diagonal-down")}
+                  className="flex h-6 items-center justify-center border-2 border-ink bg-bone px-1 text-[9px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5"
+                  title="Add diagonal guide from top-left to bottom-right"
+                >
+                  D \
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addCanvasGuide("diagonal-up")}
+                  className="flex h-6 items-center justify-center border-2 border-ink bg-bone px-1 text-[9px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5"
+                  title="Add diagonal guide from bottom-left to top-right"
+                >
+                  D /
+                </button>
+                <button
+                  type="button"
                   onClick={clearCanvasGuides}
                   className="col-span-2 flex h-6 items-center justify-center border-2 border-ink bg-paper px-1 text-[9px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5"
                 >

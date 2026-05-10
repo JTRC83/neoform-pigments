@@ -32,6 +32,7 @@ const outlineShapeTools = new Set<EditorTool>([
 
 const tools: ToolbarTool[] = [
   { id: "select", label: "Select", icon: MousePointer2 },
+  { id: "inverseSelection", label: "Inverse Select" },
   { id: "pan", label: "Pan", icon: Hand },
   { id: "rectangle", label: "Rectangle" },
   { id: "ellipse", label: "Ellipse" },
@@ -130,6 +131,8 @@ export function LeftToolbar() {
               <ToolbarShapeIcon type={tool.id} />
             ) : isDrawingTool ? (
               <ToolbarDrawIcon type={tool.id} />
+            ) : tool.id === "inverseSelection" ? (
+              <ToolbarInverseSelectionIcon />
             ) : tool.id === "gradientTool" ? (
               <ToolbarGradientIcon />
             ) : tool.id === "lawnMower" ? (
@@ -332,6 +335,10 @@ function getToolTourId(toolId: EditorTool) {
     return "gradient-tool";
   }
 
+  if (toolId === "inverseSelection") {
+    return "inverse-selection-tool";
+  }
+
   if (toolId === "chainsawCut") {
     return "chainsaw-cut-tool";
   }
@@ -341,6 +348,35 @@ function getToolTourId(toolId: EditorTool) {
   }
 
   return undefined;
+}
+
+function ToolbarInverseSelectionIcon() {
+  return (
+    <svg aria-hidden="true" className="h-6 w-6" viewBox="0 0 24 24">
+      <path
+        d="M3.5 3.5H20.5V20.5H3.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeDasharray="2.2 2.2"
+        strokeWidth="1.6"
+      />
+      <circle
+        cx="12"
+        cy="12"
+        r="4.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M6 6L9 9M18 6L15 9M6 18L9 15M18 18L15 15"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
 }
 
 function ToolbarDrawIcon({ type }: { type: EditorTool }) {
