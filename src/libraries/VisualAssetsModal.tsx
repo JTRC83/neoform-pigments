@@ -1,6 +1,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  Download,
   Images,
   Palette,
   Upload,
@@ -65,7 +66,7 @@ const visualAssetCategories: Array<{
     code: "FIN",
     description: "Obras finales, exports y piezas cerradas para revisar o reutilizar.",
     id: "final-works",
-    importHint: "Revisa exports JPG guardados y reimportalos si necesitas montar pruebas.",
+    importHint: "Revisa exports JPG guardados, descargalos o reimportalos.",
     label: "Obras finales"
   }
 ];
@@ -204,6 +205,11 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
     requestAddVisualAssetToCanvas(asset);
     setStatus(`${asset.name} abierta en el lienzo activo.`);
     onClose();
+  };
+
+  const handleDownloadAsset = (asset: VisualAsset) => {
+    downloadVisualAsset(asset);
+    setStatus(`${asset.name} enviada a descargas.`);
   };
 
   const handleApplyPaletteColor = (asset: VisualAsset, color: string) => {
@@ -656,11 +662,28 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleUseAsset(selectedAsset)}
-                          className="border-2 border-ink bg-punch px-2 py-2 text-[10px] font-black uppercase text-paper shadow-brutal-sm transition hover:-translate-y-0.5"
+                          onClick={() => handleDownloadAsset(selectedAsset)}
+                          className={clsx(
+                            "flex items-center justify-center gap-2 border-2 border-ink px-2 py-2 text-[10px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5",
+                            activeCategory === "final-works"
+                              ? "bg-punch text-paper"
+                              : "bg-mineral text-ink"
+                          )}
                         >
-                          Abrir en lienzo
+                          <Download size={13} />
+                          {activeCategory === "final-works"
+                            ? "Descargar JPG"
+                            : "Descargar archivo"}
                         </button>
+                        {activeCategory !== "final-works" ? (
+                          <button
+                            type="button"
+                            onClick={() => handleUseAsset(selectedAsset)}
+                            className="border-2 border-ink bg-punch px-2 py-2 text-[10px] font-black uppercase text-paper shadow-brutal-sm transition hover:-translate-y-0.5"
+                          >
+                            Abrir en lienzo
+                          </button>
+                        ) : null}
                         {selectedAsset.palette?.length ? (
                           <>
                             <button
@@ -736,6 +759,82 @@ export function VisualAssetsModal({ isOpen, onClose }: VisualAssetsModalProps) {
       </div>
     </section>
   );
+}
+
+function downloadVisualAsset(asset: VisualAsset) {
+  const blob = dataUrlToBlob(asset.dataUrl);
+
+  if (blob.size === 0) {
+    window.alert(
+      "No se puede descargar este archivo porque la copia guardada esta vacia."
+    );
+    return;
+  }
+
+  downloadDataUrl(asset.dataUrl, createDownloadFilename(asset));
+}
+
+function createDownloadFilename(asset: VisualAsset) {
+  if (/\.[a-z0-9]{2,5}$/i.test(asset.name)) {
+    return asset.name;
+  }
+
+  return `${slugFilename(asset.name)}.${getExtensionFromMimeType(asset.mimeType)}`;
+}
+
+function downloadDataUrl(dataUrl: string, filename: string) {
+  const link = document.createElement("a");
+
+  link.href = dataUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function dataUrlToBlob(dataUrl: string) {
+  const [metadata = "", payload = ""] = dataUrl.split(",");
+  const mimeType = metadata.match(/data:([^;]+)/)?.[1] ?? "application/octet-stream";
+
+  if (metadata.includes(";base64")) {
+    const binary = window.atob(payload);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+
+    return new Blob([bytes], { type: mimeType });
+  }
+
+  return new Blob([decodeURIComponent(payload)], { type: mimeType });
+}
+
+function getExtensionFromMimeType(mimeType: string) {
+  if (mimeType.includes("jpeg") || mimeType.includes("jpg")) {
+    return "jpg";
+  }
+
+  if (mimeType.includes("svg")) {
+    return "svg";
+  }
+
+  if (mimeType.includes("webp")) {
+    return "webp";
+  }
+
+  return "png";
+}
+
+function slugFilename(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "neoform-asset";
 }
 
 async function createVisualAssetFromFile(

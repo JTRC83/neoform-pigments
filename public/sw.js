@@ -1,4 +1,4 @@
-const CACHE_NAME = "neoform-pigments-app-v1";
+const CACHE_NAME = "neoform-pigments-app-v2";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -55,6 +55,16 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(networkFirst(request, "/"));
+    return;
+  }
+
+  if (
+    request.destination === "script" ||
+    request.destination === "style" ||
+    request.destination === "worker" ||
+    requestUrl.pathname.startsWith("/assets/")
+  ) {
+    event.respondWith(networkFirst(request, request.url));
     return;
   }
 

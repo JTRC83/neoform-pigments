@@ -8,6 +8,8 @@ import {
   ArrowDown,
   ArrowUp,
   CheckSquare,
+  ChevronsDown,
+  ChevronsUp,
   CircleHelp,
   Copy,
   Eye,
@@ -169,9 +171,18 @@ function startRightSidebarTour() {
       }
     },
     {
+      element: "[data-tour='content-eraser-tool']",
+      popover: {
+        title: "9. Borrado limpio",
+        description:
+          "Esta herramienta no corta geometria: arrastra un rectangulo y elimina las capas completas que toque, o haz clic sobre una figura para borrarla sin romper su forma.",
+        side: "right" as const
+      }
+    },
+    {
       element: "[data-tour='gradient-tool']",
       popover: {
-        title: "9. Degradado directo",
+        title: "10. Degradado directo",
         description:
           "Nueva herramienta del sidebar izquierdo: selecciona Gradient y haz clic sobre una figura para aplicar luz/sombra. Si arrastras, defines la direccion del degradado.",
         side: "right" as const
@@ -180,7 +191,7 @@ function startRightSidebarTour() {
     {
       element: "[data-tour='gradient-tool-panel']",
       popover: {
-        title: "10. Intensidad y direccion",
+        title: "11. Intensidad y direccion",
         description:
           "Configura la intensidad con el slider y elige una direccion base. Arrastrar en el lienzo sobrescribe visualmente la direccion.",
         side: "right" as const
@@ -189,7 +200,7 @@ function startRightSidebarTour() {
     {
       element: "[data-tour='remove-bg-tool']",
       popover: {
-        title: "11. Quitar fondo",
+        title: "12. Quitar fondo",
         description:
           "El cortacesped retira el relleno/fondo de una figura y mantiene una silueta seleccionable. Es util para trabajar con huecos y contornos.",
         side: "right" as const
@@ -393,15 +404,16 @@ export function RightPanel() {
   const selectedObjectIsText = selectedObject?.type === "text";
   const layers = [...activeCanvasObjects].reverse();
   const selectedLayerSet = new Set(selectedLayerIds);
-  const selectedLayers = activeCanvasObjects.filter((layer) =>
-    selectedLayerSet.has(layer.id)
-  );
   const selectedLayerActionIds =
     selectedLayerIds.length > 0
       ? selectedLayerIds
       : selectedObjectId
         ? [selectedObjectId]
         : [];
+  const selectedLayerActionSet = new Set(selectedLayerActionIds);
+  const selectedLayers = activeCanvasObjects.filter((layer) =>
+    selectedLayerActionSet.has(layer.id)
+  );
   const selectedLayerCount = selectedLayerActionIds.length;
   const canGroupLayers = selectedLayerCount > 1;
   const canUngroupLayers = selectedLayers.some((layer) => layer.type === "group");
@@ -415,6 +427,8 @@ export function RightPanel() {
 
     return layerIndex > 0;
   });
+  const selectedLayersCanMoveFront = selectedLayersCanMoveUp;
+  const selectedLayersCanMoveBack = selectedLayersCanMoveDown;
   const activeFormatId = activeArtboard
     ? getMatchingCanvasFormatId(activeArtboard, exportSettings.dpi)
     : canvasFormats[3].id;
@@ -1027,6 +1041,44 @@ export function RightPanel() {
                   requestSelectedObjectPropertyUpdate({ height })
                 }
               />
+              <div className="col-span-8 grid grid-cols-4 gap-1 border-2 border-ink bg-bone p-1">
+                <button
+                  type="button"
+                  onClick={() => moveLayers(selectedLayerActionIds, "front")}
+                  disabled={!selectedLayersCanMoveFront}
+                  className="h-7 border-2 border-ink bg-paper px-1 text-[8px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-45"
+                  title="Enviar la selección al frente"
+                >
+                  Front
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveLayers(selectedLayerActionIds, "up")}
+                  disabled={!selectedLayersCanMoveUp}
+                  className="h-7 border-2 border-ink bg-paper px-1 text-[8px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-45"
+                  title="Subir una posición"
+                >
+                  Up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveLayers(selectedLayerActionIds, "down")}
+                  disabled={!selectedLayersCanMoveDown}
+                  className="h-7 border-2 border-ink bg-paper px-1 text-[8px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-45"
+                  title="Bajar una posición"
+                >
+                  Down
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveLayers(selectedLayerActionIds, "back")}
+                  disabled={!selectedLayersCanMoveBack}
+                  className="h-7 border-2 border-ink bg-paper px-1 text-[8px] font-black uppercase shadow-brutal-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-45"
+                  title="Enviar la selección al fondo"
+                >
+                  Back
+                </button>
+              </div>
             </div>
           ) : (
             <p className="text-[9px] font-black uppercase text-ink/55">
@@ -1055,7 +1107,7 @@ export function RightPanel() {
           </p>
 
           <div
-            className="mt-1 grid grid-cols-10 gap-1 border-2 border-ink bg-bone p-1"
+            className="mt-1 grid grid-cols-12 gap-1 border-2 border-ink bg-bone p-1"
             data-tour="layers-actions"
           >
             <button
@@ -1103,6 +1155,13 @@ export function RightPanel() {
               <Lock size={13} />
             </LayerIconButton>
             <LayerIconButton
+              label="Send selected layers to front"
+              disabled={!selectedLayersCanMoveFront}
+              onClick={() => moveLayers(selectedLayerActionIds, "front")}
+            >
+              <ChevronsUp size={13} />
+            </LayerIconButton>
+            <LayerIconButton
               label="Move selected layers up"
               disabled={!selectedLayersCanMoveUp}
               onClick={() => moveLayers(selectedLayerActionIds, "up")}
@@ -1115,6 +1174,13 @@ export function RightPanel() {
               onClick={() => moveLayers(selectedLayerActionIds, "down")}
             >
               <ArrowDown size={13} />
+            </LayerIconButton>
+            <LayerIconButton
+              label="Send selected layers to back"
+              disabled={!selectedLayersCanMoveBack}
+              onClick={() => moveLayers(selectedLayerActionIds, "back")}
+            >
+              <ChevronsDown size={13} />
             </LayerIconButton>
             <LayerIconButton
               label="Delete selected layers"
@@ -1184,7 +1250,7 @@ export function RightPanel() {
                     </span>
                   </div>
 
-                  <div className="mt-1 grid grid-cols-6 gap-1">
+                  <div className="mt-1 grid grid-cols-8 gap-1">
                     <LayerIconButton
                       label={layer.visible ? "Hide layer" : "Show layer"}
                       onClick={() => toggleLayerVisibility(layer.id)}
@@ -1202,6 +1268,18 @@ export function RightPanel() {
                       onClick={() => duplicateLayers([layer.id])}
                     >
                       <Copy size={14} />
+                    </LayerIconButton>
+                    <LayerIconButton
+                      label="Send layer to front"
+                      disabled={
+                        activeCanvasObjects.findIndex(
+                          (object) => object.id === layer.id
+                        ) ===
+                        activeCanvasObjects.length - 1
+                      }
+                      onClick={() => moveLayer(layer.id, "front")}
+                    >
+                      <ChevronsUp size={14} />
                     </LayerIconButton>
                     <LayerIconButton
                       label="Move layer up"
@@ -1225,6 +1303,17 @@ export function RightPanel() {
                       onClick={() => moveLayer(layer.id, "down")}
                     >
                       <ArrowDown size={14} />
+                    </LayerIconButton>
+                    <LayerIconButton
+                      label="Send layer to back"
+                      disabled={
+                        activeCanvasObjects.findIndex(
+                          (object) => object.id === layer.id
+                        ) === 0
+                      }
+                      onClick={() => moveLayer(layer.id, "back")}
+                    >
+                      <ChevronsDown size={14} />
                     </LayerIconButton>
                     <LayerIconButton
                       label="Delete layer"

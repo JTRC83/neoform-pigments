@@ -48,6 +48,7 @@ const tools: ToolbarTool[] = [
   { id: "nibStroke", label: "Nib" },
   { id: "markerStroke", label: "Marker" },
   { id: "gradientTool", label: "Gradient" },
+  { id: "contentEraser", label: "Clean Delete" },
   { id: "chainsawCut", label: "Chainsaw Cut" },
   { id: "lawnMower", label: "Remove BG" }
 ];
@@ -135,6 +136,8 @@ export function LeftToolbar() {
               <ToolbarInverseSelectionIcon />
             ) : tool.id === "gradientTool" ? (
               <ToolbarGradientIcon />
+            ) : tool.id === "contentEraser" ? (
+              <ToolbarContentEraserIcon />
             ) : tool.id === "lawnMower" ? (
               <ToolbarLawnMowerIcon />
             ) : Icon ? (
@@ -343,6 +346,10 @@ function getToolTourId(toolId: EditorTool) {
     return "chainsaw-cut-tool";
   }
 
+  if (toolId === "contentEraser") {
+    return "content-eraser-tool";
+  }
+
   if (toolId === "lawnMower") {
     return "remove-bg-tool";
   }
@@ -370,6 +377,35 @@ function ToolbarInverseSelectionIcon() {
       />
       <path
         d="M6 6L9 9M18 6L15 9M6 18L9 15M18 18L15 15"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+function ToolbarContentEraserIcon() {
+  return (
+    <svg aria-hidden="true" className="h-6 w-6" viewBox="0 0 24 24">
+      <path
+        d="M5 5H19V19H5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeDasharray="2.2 2.2"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M8.2 15.6L14.9 8.9L17.2 11.2L10.5 17.9H8.2Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M13.7 10.1L16 12.4M7 7L17 17"
         fill="none"
         stroke="currentColor"
         strokeLinecap="round"

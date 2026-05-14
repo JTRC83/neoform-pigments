@@ -139,9 +139,13 @@ type EditorState = {
   duplicateLayers: (ids: string[]) => void;
   groupLayers: (ids: string[]) => void;
   ungroupLayers: (ids: string[]) => void;
-  moveLayer: (id: string, direction: "up" | "down") => void;
-  moveLayers: (ids: string[], direction: "up" | "down") => void;
+  moveLayer: (id: string, direction: "up" | "down" | "front" | "back") => void;
+  moveLayers: (
+    ids: string[],
+    direction: "up" | "down" | "front" | "back"
+  ) => void;
   renameLayer: (id: string, name: string) => void;
+  requestFlattenLayers: () => void;
   requestAddLibraryForm: (form: FormPreset) => void;
   requestApplyPigment: (pigment: PigmentSwatch) => void;
   requestApplyTexture: (texture: TexturePreset) => void;
@@ -462,7 +466,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         layerActionRequest: createLayerActionRequest(
           state.layerActionRequest,
           targetIds,
-          direction === "up" ? "move-up" : "move-down"
+          getLayerMoveAction(direction)
         )
       };
     }),
@@ -485,6 +489,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         )
       };
     }),
+  requestFlattenLayers: () =>
+    set((state) => ({
+      layerActionRequest: createLayerActionRequest(
+        state.layerActionRequest,
+        [],
+        "flatten"
+      )
+    })),
   requestAddLibraryForm: (form) =>
     set((state) => ({
       libraryActionRequest: {
@@ -1113,9 +1125,24 @@ function uniqueIds(ids: string[]) {
 function reorderLayerSummaries(
   layers: CanvasObjectSummary[],
   ids: string[],
-  direction: "up" | "down"
+  direction: "up" | "down" | "front" | "back"
 ) {
   const selectedIds = new Set(ids);
+
+  if (direction === "front" || direction === "back") {
+    const selectedLayers = layers.filter((layer) => selectedIds.has(layer.id));
+
+    if (selectedLayers.length === 0) {
+      return layers;
+    }
+
+    const remainingLayers = layers.filter((layer) => !selectedIds.has(layer.id));
+
+    return direction === "front"
+      ? [...remainingLayers, ...selectedLayers]
+      : [...selectedLayers, ...remainingLayers];
+  }
+
   const nextLayers = [...layers];
   let moved = false;
 
@@ -1142,6 +1169,18 @@ function reorderLayerSummaries(
   }
 
   return moved ? nextLayers : layers;
+}
+
+function getLayerMoveAction(direction: "up" | "down" | "front" | "back") {
+  if (direction === "front") {
+    return "move-front";
+  }
+
+  if (direction === "back") {
+    return "move-back";
+  }
+
+  return direction === "up" ? "move-up" : "move-down";
 }
 
 function getNextGuidePosition(

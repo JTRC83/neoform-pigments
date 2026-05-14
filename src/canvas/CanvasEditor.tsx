@@ -74,6 +74,7 @@ type FabricPaint = string | Pattern | Gradient<"linear"> | Gradient<"radial">;
 type DimensionUnit = "px" | "cm" | "mm";
 
 const BASE_PRINT_DPI = defaultCanvasDpi;
+const localExportCounterKey = "neoform-pigments:export-counters:v1";
 
 type DimensionEditorState = {
   unit: DimensionUnit;
@@ -143,6 +144,12 @@ type GradientToolState = {
   target: FabricObject;
 };
 
+type ContentEraseSelectionState = {
+  preview: Rect;
+  start: Point;
+  target?: FabricObject;
+};
+
 type PressureStrokePoint = {
   pressure: number;
   width: number;
@@ -173,6 +180,8 @@ const pressureStrokeName = "neoform-pressure-stroke";
 const visualAssetIdName = "neoform-visual-asset-id";
 const vectorCutPolygonName = "neoform-vector-cut-polygon";
 const vectorCutPolygonSpaceName = "neoform-vector-cut-polygon-space";
+const contentEraseRectsName = "neoform-content-erase-rects";
+const contentEraseClipKindName = "neoform-content-erase-clip";
 const customObjectProperties = [
   "id",
   "name",
@@ -201,7 +210,8 @@ const customObjectProperties = [
   colorBaseStrokeName,
   visualAssetIdName,
   vectorCutPolygonName,
-  vectorCutPolygonSpaceName
+  vectorCutPolygonSpaceName,
+  contentEraseRectsName
 ];
 const textFontFiles: Record<TextFontFamily, string> = {
   "Archivo Black": "/fonts/archivo-black.ttf",
@@ -647,6 +657,7 @@ export function CanvasEditor() {
     let isPanning = false;
     let vectorCutState: VectorCutState | null = null;
     let gradientToolState: GradientToolState | null = null;
+    let contentEraseSelectionState: ContentEraseSelectionState | null = null;
     let pressureStrokeState: PressureStrokeState | null = null;
     let lastPanPoint = { x: 0, y: 0 };
     const undoStack: Array<{ objects: CanvasObjectSummary[]; snapshot: string }> = [];
@@ -705,8 +716,11 @@ export function CanvasEditor() {
     };
 
     const beginVectorCut = (event: TPointerEventInfo) => {
+      const activeObject = canvas.getActiveObject();
       const target =
-        (event.target as FabricObject | undefined) ?? canvas.getActiveObject();
+        activeObject && isInverseSelectionMask(activeObject)
+          ? activeObject
+          : (event.target as FabricObject | undefined) ?? activeObject;
 
       const pointer = canvas.getPointer(event.e);
       const start = new Point(pointer.x, pointer.y);
@@ -953,6 +967,137 @@ export function CanvasEditor() {
       return true;
     };
 
+    const beginContentEraseSelection = (event: TPointerEventInfo) => {
+      const tool = useEditorStore.getState().activeTool;
+
+      if (tool !== "contentEraser") {
+        return false;
+      }
+
+      const pointer = canvas.getPointer(event.e);
+      const start = new Point(pointer.x, pointer.y);
+      const target = event.target as FabricObject | undefined;
+      const preview = new Rect({
+        evented: false,
+        excludeFromExport: true,
+        fill: "rgba(255, 47, 125, 0.12)",
+        height: 1,
+        left: start.x,
+        name: "content-erase-selection-preview",
+        objectCaching: false,
+        selectable: false,
+        stroke: "#FF2F7D",
+        strokeDashArray: [7, 5],
+        strokeWidth: 2,
+        top: start.y,
+        width: 1
+      });
+
+      contentEraseSelectionState = {
+        preview,
+        start,
+        target: target?.get("name") === "symmetry-guide" ? undefined : target
+      };
+      canvas.add(preview);
+      canvas.bringObjectToFront(preview);
+      canvas.discardActiveObject();
+      canvas.selection = false;
+      canvas.requestRenderAll();
+      return true;
+    };
+
+    const updateContentEraseSelection = (event: TPointerEventInfo) => {
+      if (!contentEraseSelectionState) {
+        return false;
+      }
+
+      const pointer = canvas.getPointer(event.e);
+      const { preview, start } = contentEraseSelectionState;
+      const left = Math.min(start.x, pointer.x);
+      const top = Math.min(start.y, pointer.y);
+      const width = Math.abs(pointer.x - start.x);
+      const height = Math.abs(pointer.y - start.y);
+
+      preview.set({ height, left, top, width });
+      preview.setCoords();
+      canvas.requestRenderAll();
+      return true;
+    };
+
+    const finishContentEraseSelection = (event: TPointerEventInfo) => {
+      if (!contentEraseSelectionState) {
+        return false;
+      }
+
+      const { preview, start, target } = contentEraseSelectionState;
+      const pointer = canvas.getPointer(event.e);
+      const selectionRect = getNormalizedRectFromPoints(start, pointer);
+      const isClickDelete = selectionRect.width < 8 && selectionRect.height < 8;
+      const state = useEditorStore.getState();
+      const activeLayerSummaries = state.canvasObjects.filter(
+        (summary) => summary.artboardId === currentArtboardId
+      );
+      const deletableIds = new Set(
+        activeLayerSummaries
+          .filter((summary) => summary.visible && !summary.locked)
+          .map((summary) => summary.id)
+      );
+      const targetObjects = isClickDelete
+        ? []
+        : canvas.getObjects().filter((object) => {
+            const objectId = String(object.get("id") ?? "");
+
+            return (
+              deletableIds.has(objectId) &&
+              object.get("name") !== "symmetry-guide" &&
+              object.get("name") !== "content-erase-selection-preview" &&
+              rectsIntersect(selectionRect, object.getBoundingRect())
+            );
+          });
+
+      canvas.remove(preview);
+      contentEraseSelectionState = null;
+      canvas.selection = true;
+
+      if (isClickDelete) {
+        const targetName = target?.get("name");
+        const targetMessage = targetName
+          ? `Arrastra un area sobre ${targetName} para borrar solo esa parte.`
+          : "Arrastra un area para borrar solo la zona seleccionada.";
+
+        showVectorCutNotice(targetMessage);
+        canvas.requestRenderAll();
+        return true;
+      }
+
+      if (targetObjects.length === 0) {
+        showVectorCutNotice("No hay contenido editable dentro de la seleccion.");
+        canvas.requestRenderAll();
+        return true;
+      }
+
+      const result = applyContentEraseToObjects(canvas, targetObjects, selectionRect);
+
+      if (result.applied === 0) {
+        showVectorCutNotice(
+          result.skipped > 0
+            ? "Esta zona toca objetos ya recortados. No se borra para evitar romperlos."
+            : "La seleccion es demasiado pequeña para borrar contenido."
+        );
+        canvas.requestRenderAll();
+        return true;
+      }
+
+      syncSelectedObjectProperties(canvas.getActiveObject());
+      canvas.requestRenderAll();
+      saveCurrentSnapshot();
+      pushHistory();
+      showVectorCutNotice(
+        `${result.applied} objeto(s) borrados parcialmente sin eliminar la capa.`
+      );
+      return true;
+    };
+
     const beginPressureStroke = (event: TPointerEventInfo) => {
       const tool = useEditorStore.getState().activeTool;
 
@@ -1067,6 +1212,10 @@ export function CanvasEditor() {
       }
 
       if (beginGradientTool(event)) {
+        return;
+      }
+
+      if (beginContentEraseSelection(event)) {
         return;
       }
 
@@ -1207,6 +1356,10 @@ export function CanvasEditor() {
         return;
       }
 
+      if (updateContentEraseSelection(event)) {
+        return;
+      }
+
       if (!isPanning || useEditorStore.getState().activeTool !== "pan") {
         return;
       }
@@ -1240,6 +1393,11 @@ export function CanvasEditor() {
         return;
       }
 
+      if (finishContentEraseSelection(event)) {
+        finishPointerInteraction();
+        return;
+      }
+
       void finishVectorCut(event).then((handled) => {
         if (handled) {
           return;
@@ -1260,6 +1418,10 @@ export function CanvasEditor() {
       refreshLineEditOverlay(
         selectedObjects.length === 1 ? selectedObjects[0] : null
       );
+      syncInverseSelectionMaskInteractivity(
+        canvas,
+        selectedObjects.map((object) => String(object.get("id") ?? ""))
+      );
     });
     canvas.on("selection:updated", (event) => {
       const selectedObjects =
@@ -1273,10 +1435,15 @@ export function CanvasEditor() {
       refreshLineEditOverlay(
         selectedObjects.length === 1 ? selectedObjects[0] : null
       );
+      syncInverseSelectionMaskInteractivity(
+        canvas,
+        selectedObjects.map((object) => String(object.get("id") ?? ""))
+      );
     });
     canvas.on("selection:cleared", () => {
       useEditorStore.getState().setCanvasSelection([]);
       useEditorStore.getState().setSelectedObjectProperties(null);
+      syncInverseSelectionMaskInteractivity(canvas);
       refreshLineEditOverlay(null);
     });
     canvas.on("object:scaling", (event) => {
@@ -1452,6 +1619,7 @@ export function CanvasEditor() {
 
         if (selectionIds.length === 0) {
           canvas.discardActiveObject();
+          syncInverseSelectionMaskInteractivity(canvas);
           refreshLineEditOverlay(null);
           canvas.requestRenderAll();
           return;
@@ -1466,10 +1634,17 @@ export function CanvasEditor() {
         }
 
         if (objects.length === 1) {
+          syncInverseSelectionMaskInteractivity(canvas, [
+            String(objects[0].get("id") ?? "")
+          ]);
           canvas.setActiveObject(objects[0]);
           syncSelectedObjectProperties(objects[0]);
           refreshLineEditOverlay(objects[0]);
         } else {
+          syncInverseSelectionMaskInteractivity(
+            canvas,
+            objects.map((object) => String(object.get("id") ?? ""))
+          );
           const selection = new ActiveSelection(objects, { canvas });
 
           canvas.setActiveObject(selection);
@@ -1493,6 +1668,17 @@ export function CanvasEditor() {
         const request = state.layerActionRequest;
 
         if (!request) {
+          return;
+        }
+
+        if (request.action === "flatten") {
+          void flattenCurrentArtboardLayers({
+            canvas,
+            currentArtboardId,
+            pushHistory,
+            refreshLineEditOverlay,
+            saveCurrentSnapshot
+          });
           return;
         }
 
@@ -1555,7 +1741,12 @@ export function CanvasEditor() {
           return;
         }
 
-        if (request.action === "move-up" || request.action === "move-down") {
+        if (
+          request.action === "move-up" ||
+          request.action === "move-down" ||
+          request.action === "move-front" ||
+          request.action === "move-back"
+        ) {
           syncCanvasStackingWithSummaries(canvas, state.canvasObjects, currentArtboardId);
         }
 
@@ -1628,6 +1819,16 @@ export function CanvasEditor() {
         }
 
         if (request.action === "add-visual-asset") {
+          const activeObject = canvas.getActiveObject();
+
+          if (activeObject && isInverseSelectionMask(activeObject)) {
+            void applyVisualAssetAsObjectFill(canvas, activeObject, request.asset).then(() => {
+              saveCurrentSnapshot();
+              pushHistory();
+            });
+            return;
+          }
+
           void addVisualAssetImageToCanvas(canvas, request.asset).then(() => {
             saveCurrentSnapshot();
             pushHistory();
@@ -1699,6 +1900,10 @@ export function CanvasEditor() {
         }
 
         if (state.exportRequest.format === "jpeg") {
+          if (!confirmJpegExportWithFlattenedLayers(canvas, currentArtboardId)) {
+            return;
+          }
+
           void exportCanvasAsJpeg(canvas);
         }
 
@@ -2373,6 +2578,43 @@ async function exportCanvasAsJpeg(
   await exportCanvasAsRasterImage(canvas, "jpeg", artboardOverride);
 }
 
+function confirmJpegExportWithFlattenedLayers(
+  canvas: ReturnType<typeof createFabricCanvas>,
+  currentArtboardId: string
+) {
+  if (isCurrentArtboardReadyForFinalExport(canvas, currentArtboardId)) {
+    return true;
+  }
+
+  return window.confirm(
+    "El lienzo tiene varias capas sin acoplar. Para un JPG final conviene pulsar primero Acoplar. " +
+      "Aceptar exporta una copia raster igualmente; Cancelar vuelve al editor para acoplar capas."
+  );
+}
+
+function isCurrentArtboardReadyForFinalExport(
+  canvas: ReturnType<typeof createFabricCanvas>,
+  currentArtboardId: string
+) {
+  const activeLayers = useEditorStore
+    .getState()
+    .canvasObjects.filter((object) => object.artboardId === currentArtboardId);
+
+  if (activeLayers.length <= 1) {
+    return true;
+  }
+
+  const activeObjects = getCanvasObjectsByIds(
+    canvas,
+    activeLayers.map((layer) => layer.id)
+  );
+
+  return (
+    activeObjects.length === 1 &&
+    activeObjects[0].get("neoform-flattened-layer") === true
+  );
+}
+
 async function exportCanvasAsRasterImage(
   canvas: ReturnType<typeof createFabricCanvas>,
   format: "png" | "jpeg",
@@ -2380,16 +2622,32 @@ async function exportCanvasAsRasterImage(
 ) {
   const artboard = getExportArtboard(artboardOverride);
   const extension = format === "jpeg" ? "jpg" : "png";
-  const filename = `${toFileSlug(artboard?.name ?? "canvas")}-neoform-pigments.${extension}`;
+  const filename =
+    format === "jpeg"
+      ? createNextExportFilename(artboard?.name ?? "canvas", extension)
+      : `${toFileSlug(artboard?.name ?? "canvas")}-neoform-pigments.${extension}`;
   const dataUrl =
     format === "jpeg"
       ? await getProfessionalRasterDataUrl(canvas, "jpeg", artboard)
       : await getCanvasRasterDataUrl(canvas, format, artboard);
 
-  downloadDataUrl(dataUrl, filename);
-
   if (format === "jpeg") {
     saveJpegExportAsFinalWork(dataUrl, filename, artboard);
+  }
+
+  if (format === "jpeg") {
+    const jpegBlob = dataUrlToBlob(dataUrl);
+
+    if (jpegBlob.size === 0) {
+      window.alert(
+        "No se ha podido generar un JPG valido. La descarga se ha cancelado para evitar crear un archivo vacio."
+      );
+      return;
+    }
+
+    showJpegDownloadPrompt(jpegBlob, filename);
+  } else {
+    downloadDataUrl(dataUrl, filename);
   }
 }
 
@@ -2887,7 +3145,144 @@ function downloadBlob(blob: Blob, filename: string) {
   document.body.appendChild(downloadLink);
   downloadLink.click();
   downloadLink.remove();
-  URL.revokeObjectURL(objectUrl);
+  revokeObjectUrlLater(objectUrl);
+}
+
+function showJpegDownloadPrompt(blob: Blob, filename: string) {
+  document.querySelector("[data-jpg-download-prompt='true']")?.remove();
+
+  const objectUrl = URL.createObjectURL(blob);
+  const prompt = document.createElement("div");
+  const title = document.createElement("strong");
+  const details = document.createElement("span");
+  const actions = document.createElement("div");
+  const downloadLink = document.createElement("a");
+  const previewLink = document.createElement("a");
+  const closeButton = document.createElement("button");
+  const formattedSize = formatFileSize(blob.size);
+
+  prompt.dataset.jpgDownloadPrompt = "true";
+  title.textContent = "JPG sRGB listo";
+  details.textContent = `${filename} se ha montado como JPG real (${formattedSize}) y tambien queda guardado en Obras finales. Primero puedes abrirlo para verificarlo y despues descargarlo.`;
+  downloadLink.href = objectUrl;
+  downloadLink.download = filename;
+  downloadLink.textContent = "Descargar JPG";
+  previewLink.href = objectUrl;
+  previewLink.target = "_blank";
+  previewLink.rel = "noopener noreferrer";
+  previewLink.textContent = "Abrir JPG";
+  closeButton.type = "button";
+  closeButton.textContent = "Cerrar";
+
+  prompt.style.position = "fixed";
+  prompt.style.right = "18px";
+  prompt.style.top = "64px";
+  prompt.style.zIndex = "10000";
+  prompt.style.display = "grid";
+  prompt.style.gap = "8px";
+  prompt.style.width = "min(360px, calc(100vw - 32px))";
+  prompt.style.border = "3px solid #101010";
+  prompt.style.background = "#FFE900";
+  prompt.style.boxShadow = "6px 6px 0 #101010";
+  prompt.style.color = "#101010";
+  prompt.style.fontSize = "12px";
+  prompt.style.fontWeight = "900";
+  prompt.style.padding = "12px";
+  prompt.style.textTransform = "uppercase";
+
+  title.style.fontSize = "15px";
+  details.style.fontSize = "10px";
+  details.style.lineHeight = "1.35";
+  actions.style.display = "flex";
+  actions.style.gap = "8px";
+  actions.style.alignItems = "center";
+
+  downloadLink.style.border = "2px solid #101010";
+  downloadLink.style.background = "#03DAC5";
+  downloadLink.style.boxShadow = "3px 3px 0 #101010";
+  downloadLink.style.color = "#101010";
+  downloadLink.style.cursor = "pointer";
+  downloadLink.style.fontSize = "11px";
+  downloadLink.style.fontWeight = "900";
+  downloadLink.style.padding = "7px 10px";
+  downloadLink.style.textDecoration = "none";
+  downloadLink.style.textTransform = "uppercase";
+  previewLink.style.border = "2px solid #101010";
+  previewLink.style.background = "#FFF8D8";
+  previewLink.style.boxShadow = "3px 3px 0 #101010";
+  previewLink.style.color = "#101010";
+  previewLink.style.cursor = "pointer";
+  previewLink.style.fontSize = "11px";
+  previewLink.style.fontWeight = "900";
+  previewLink.style.padding = "7px 10px";
+  previewLink.style.textDecoration = "none";
+  previewLink.style.textTransform = "uppercase";
+  closeButton.style.width = "fit-content";
+  closeButton.style.border = "2px solid #101010";
+  closeButton.style.background = "#FFF8D8";
+  closeButton.style.boxShadow = "3px 3px 0 #101010";
+  closeButton.style.color = "#101010";
+  closeButton.style.cursor = "pointer";
+  closeButton.style.fontSize = "11px";
+  closeButton.style.fontWeight = "900";
+  closeButton.style.padding = "7px 10px";
+  closeButton.style.textDecoration = "none";
+  closeButton.style.textTransform = "uppercase";
+
+  const cleanup = () => {
+    prompt.remove();
+    URL.revokeObjectURL(objectUrl);
+  };
+
+  downloadLink.addEventListener("click", () => {
+    downloadLink.textContent = "Descargando...";
+    window.setTimeout(() => {
+      if (document.body.contains(prompt)) {
+        downloadLink.textContent = "Descargar otra vez";
+      }
+    }, 1500);
+  });
+  closeButton.addEventListener("click", cleanup);
+  window.setTimeout(() => {
+    if (document.body.contains(prompt)) {
+      cleanup();
+    }
+  }, 600_000);
+
+  actions.append(downloadLink, previewLink, closeButton);
+  prompt.append(title, details, actions);
+  document.body.appendChild(prompt);
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function revokeObjectUrlLater(objectUrl: string) {
+  // Chrome may still be streaming the Blob into Downloads after click.
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}
+
+function dataUrlToBlob(dataUrl: string) {
+  const [metadata = "", payload = ""] = dataUrl.split(",");
+  const mimeType = metadata.match(/^data:([^;]+)/)?.[1] ?? "application/octet-stream";
+  const isBase64 = metadata.includes(";base64");
+  const binary = isBase64 ? atob(payload) : decodeURIComponent(payload);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new Blob([bytes], { type: mimeType });
 }
 
 function addLibraryShape({
@@ -2963,14 +3358,74 @@ async function addVisualAssetImageToCanvas(
   syncSelectedObjectProperties(image);
 }
 
+async function applyVisualAssetAsObjectFill(
+  canvas: ReturnType<typeof createFabricCanvas>,
+  object: FabricObject,
+  asset: VisualAsset
+) {
+  const patternSource = await createVisualAssetFillSource(canvas, asset.dataUrl);
+  const pattern = new Pattern({
+    source: patternSource,
+    repeat: "no-repeat"
+  });
+
+  applyFillToObject(object, pattern);
+  object.dirty = true;
+  syncSelectedObjectProperties(object);
+  canvas.requestRenderAll();
+  showVectorCutNotice(`${asset.name} aplicada como relleno.`);
+}
+
+async function createVisualAssetFillSource(
+  canvas: ReturnType<typeof createFabricCanvas>,
+  dataUrl: string
+) {
+  const image = await loadImageElement(dataUrl);
+  const source = document.createElement("canvas");
+  const width = Math.max(1, Math.round(canvas.getWidth()));
+  const height = Math.max(1, Math.round(canvas.getHeight()));
+  const context = source.getContext("2d");
+
+  source.width = width;
+  source.height = height;
+
+  if (!context) {
+    return image;
+  }
+
+  const imageWidth = image.naturalWidth || image.width || width;
+  const imageHeight = image.naturalHeight || image.height || height;
+  const scale = Math.max(width / imageWidth, height / imageHeight);
+  const drawWidth = imageWidth * scale;
+  const drawHeight = imageHeight * scale;
+
+  context.drawImage(
+    image,
+    (width - drawWidth) / 2,
+    (height - drawHeight) / 2,
+    drawWidth,
+    drawHeight
+  );
+
+  return source;
+}
+
 async function addInverseSelectionMaskToCanvas(
   canvas: ReturnType<typeof createFabricCanvas>
 ) {
   const state = useEditorStore.getState();
   const currentArtboardId = state.activeArtboardId;
+  const previousMaskIds = new Set(
+    canvas
+      .getObjects()
+      .filter((object) => object.get("neoform-shape-kind") === "inverseSelection")
+      .map((object) => String(object.get("id") ?? ""))
+      .filter(Boolean)
+  );
   const canvasObjectIds = new Set(
     state.canvasObjects
       .filter((object) => object.artboardId === currentArtboardId)
+      .filter((object) => !previousMaskIds.has(object.id))
       .map((object) => object.id)
   );
   const sourceObjects = canvas
@@ -3022,8 +3477,28 @@ async function addInverseSelectionMaskToCanvas(
     return null;
   }
 
+  if (previousMaskIds.size > 0) {
+    canvas.getObjects().forEach((object) => {
+      const objectId = String(object.get("id") ?? "");
+
+      if (previousMaskIds.has(objectId)) {
+        canvas.remove(object);
+      }
+    });
+    useEditorStore.getState().replaceCanvasObjectsForArtboard(
+      currentArtboardId,
+      useEditorStore
+        .getState()
+        .canvasObjects.filter(
+          (object) =>
+            object.artboardId === currentArtboardId && !previousMaskIds.has(object.id)
+        )
+    );
+  }
+
+  const nextState = useEditorStore.getState();
   const objectNumber =
-    state.canvasObjects.filter((object) => object.artboardId === currentArtboardId)
+    nextState.canvasObjects.filter((object) => object.artboardId === currentArtboardId)
       .length + 1;
   const summary = createShapeSummary(
     "inverseSelection",
@@ -3035,9 +3510,9 @@ async function addInverseSelectionMaskToCanvas(
     fillRule: "evenodd",
     objectCaching: false,
     opacity: 0.86,
-    stroke: "#E9468A",
-    strokeDashArray: [10, 6],
-    strokeWidth: 2
+    perPixelTargetFind: true,
+    stroke: "transparent",
+    strokeWidth: 0
   });
 
   mask.set({
@@ -3049,11 +3524,14 @@ async function addInverseSelectionMaskToCanvas(
   mask.set(vectorCutPolygonSpaceName, "multiPolygon-local");
   applyLayerState(mask, summary);
   canvas.add(mask);
-  canvas.setActiveObject(mask);
+  syncInverseSelectionMaskInteractivity(canvas);
+  canvas.discardActiveObject();
   canvas.requestRenderAll();
   useEditorStore.getState().addCanvasObject(summary);
+  useEditorStore.getState().setCanvasSelection([]);
+  useEditorStore.getState().setSelectedObjectProperties(null);
   useEditorStore.getState().setActiveTool("select");
-  syncSelectedObjectProperties(mask);
+  showVectorCutNotice("Seleccion inversa creada como capa editable.");
 
   return mask;
 }
@@ -3222,6 +3700,127 @@ function getCompositionObjectType(object: FabricObject): CanvasObjectType {
   }
 
   return object.type === "textbox" || object.type === "text" ? "text" : "rectangle";
+}
+
+type FlattenCanvasWorkflowOptions = {
+  canvas: ReturnType<typeof createFabricCanvas>;
+  currentArtboardId: string;
+  pushHistory: () => void;
+  refreshLineEditOverlay: (object?: FabricObject | null) => void;
+  saveCurrentSnapshot: () => void;
+};
+
+async function flattenCurrentArtboardLayers({
+  canvas,
+  currentArtboardId,
+  pushHistory,
+  refreshLineEditOverlay,
+  saveCurrentSnapshot
+}: FlattenCanvasWorkflowOptions) {
+  const state = useEditorStore.getState();
+  const activeLayers = state.canvasObjects.filter(
+    (object) => object.artboardId === currentArtboardId
+  );
+  const activeLayerIds = activeLayers.map((layer) => layer.id);
+  const activeObjects = getCanvasObjectsByIds(canvas, activeLayerIds);
+  const visibleObjects = activeObjects.filter((object) => object.visible !== false);
+
+  if (visibleObjects.length === 0) {
+    window.alert("No hay capas visibles para acoplar.");
+    return;
+  }
+
+  const shouldFlatten = window.confirm(
+    "Acoplar capas convierte las capas visibles del lienzo activo en una sola capa raster. " +
+      "Es ideal antes de exportar JPG, pero ya no podras editar esas capas por separado. ¿Continuar?"
+  );
+
+  if (!shouldFlatten) {
+    return;
+  }
+
+  canvas.discardActiveObject();
+  refreshLineEditOverlay(null);
+  canvas.requestRenderAll();
+
+  const activeArtboard = state.artboards.find(
+    (artboard) => artboard.id === currentArtboardId
+  );
+  const flattenedDataUrl = await createFlattenedCanvasDataUrl(
+    canvas,
+    activeArtboard
+  );
+  const imageElement = await loadImageElement(flattenedDataUrl);
+  const imageWidth = imageElement.naturalWidth || imageElement.width || canvas.getWidth();
+  const imageHeight =
+    imageElement.naturalHeight || imageElement.height || canvas.getHeight();
+  const summary = createShapeSummary("image", 1, currentArtboardId);
+  const flattenedImage = new FabricImage(imageElement, {
+    left: 0,
+    objectCaching: false,
+    top: 0
+  });
+
+  summary.name = "Flattened Canvas";
+  flattenedImage.set({
+    id: summary.id,
+    name: summary.name,
+    scaleX: canvas.getWidth() / imageWidth,
+    scaleY: canvas.getHeight() / imageHeight
+  });
+  flattenedImage.set("neoform-shape-kind", "image");
+  flattenedImage.set("neoform-flattened-layer", true);
+
+  canvas.remove(...activeObjects);
+  applyLayerState(flattenedImage, summary);
+  canvas.add(flattenedImage);
+  canvas.setActiveObject(flattenedImage);
+  useEditorStore
+    .getState()
+    .replaceCanvasObjectsForArtboard(currentArtboardId, [summary]);
+  useEditorStore.getState().setCanvasSelection([summary.id]);
+  syncSelectedObjectProperties(flattenedImage);
+  canvas.requestRenderAll();
+  saveCurrentSnapshot();
+  pushHistory();
+  showVectorCutNotice("Capas acopladas en una sola capa final.");
+}
+
+async function createFlattenedCanvasDataUrl(
+  canvas: ReturnType<typeof createFabricCanvas>,
+  artboard?: ExportArtboardLike
+) {
+  const targetWidth = Math.max(1, Math.round(artboard?.width ?? canvas.getWidth()));
+  const targetHeight = Math.max(1, Math.round(artboard?.height ?? canvas.getHeight()));
+  const multiplier = Math.max(
+    1,
+    Math.max(targetWidth / canvas.getWidth(), targetHeight / canvas.getHeight())
+  );
+  const rawDataUrl = canvas.toDataURL({
+    enableRetinaScaling: false,
+    format: "png",
+    multiplier
+  });
+  const image = await loadImageElement(rawDataUrl);
+  const outputCanvas = document.createElement("canvas");
+  const width = targetWidth;
+  const height = targetHeight;
+
+  outputCanvas.width = width;
+  outputCanvas.height = height;
+  const context = getSrgbCanvasContext(outputCanvas);
+
+  if (!context) {
+    return rawDataUrl;
+  }
+
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image, 0, 0, width, height);
+
+  return outputCanvas.toDataURL("image/png");
 }
 
 type LayerCanvasWorkflowOptions = {
@@ -3517,6 +4116,166 @@ function getCanvasObjectById(
     .find((object) => object.get("id") === objectId);
 }
 
+function getNormalizedRectFromPoints(start: Point, end: Point) {
+  const left = Math.min(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+  const width = Math.abs(end.x - start.x);
+  const height = Math.abs(end.y - start.y);
+
+  return {
+    height,
+    left,
+    top,
+    width
+  };
+}
+
+function rectsIntersect(
+  first: { height: number; left: number; top: number; width: number },
+  second: { height: number; left: number; top: number; width: number }
+) {
+  return !(
+    first.left + first.width < second.left ||
+    second.left + second.width < first.left ||
+    first.top + first.height < second.top ||
+    second.top + second.height < first.top
+  );
+}
+
+function applyContentEraseToObjects(
+  canvas: ReturnType<typeof createFabricCanvas>,
+  objects: FabricObject[],
+  eraseRect: { height: number; left: number; top: number; width: number }
+) {
+  if (eraseRect.width * eraseRect.height < 16) {
+    return { applied: 0, skipped: 0 };
+  }
+
+  let applied = 0;
+  let skipped = 0;
+
+  objects.forEach((object) => {
+    const existingRects = getContentEraseRects(object);
+    const existingClipPath = object.clipPath as FabricObject | undefined;
+    const hasForeignClipPath =
+      existingClipPath &&
+      existingRects.length === 0 &&
+      existingClipPath.get(contentEraseClipKindName) !== true;
+
+    if (hasForeignClipPath) {
+      skipped += 1;
+      return;
+    }
+
+    const nextRects = [...existingRects, normalizeContentEraseRect(eraseRect)];
+    const clipPath = createContentEraseClipPath(canvas, nextRects);
+
+    object.set({
+      clipPath,
+      dirty: true,
+      objectCaching: true
+    });
+    object.set(contentEraseRectsName, nextRects);
+    object.setCoords();
+    applied += 1;
+  });
+
+  return { applied, skipped };
+}
+
+function getContentEraseRects(object: FabricObject) {
+  const value = object.get(contentEraseRectsName);
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(isContentEraseRect);
+}
+
+function isContentEraseRect(
+  value: unknown
+): value is { height: number; left: number; top: number; width: number } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const rect = value as Record<string, unknown>;
+
+  return (
+    typeof rect.left === "number" &&
+    typeof rect.top === "number" &&
+    typeof rect.width === "number" &&
+    typeof rect.height === "number" &&
+    Number.isFinite(rect.left) &&
+    Number.isFinite(rect.top) &&
+    Number.isFinite(rect.width) &&
+    Number.isFinite(rect.height) &&
+    rect.width > 0 &&
+    rect.height > 0
+  );
+}
+
+function normalizeContentEraseRect(rect: {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+}) {
+  return {
+    height: Math.max(1, roundPathNumber(rect.height)),
+    left: roundPathNumber(rect.left),
+    top: roundPathNumber(rect.top),
+    width: Math.max(1, roundPathNumber(rect.width))
+  };
+}
+
+function createContentEraseClipPath(
+  canvas: ReturnType<typeof createFabricCanvas>,
+  rects: Array<{ height: number; left: number; top: number; width: number }>
+) {
+  const canvasWidth = Math.max(1, canvas.getWidth());
+  const canvasHeight = Math.max(1, canvas.getHeight());
+  const outerRing = [
+    { x: 0, y: 0 },
+    { x: canvasWidth, y: 0 },
+    { x: canvasWidth, y: canvasHeight },
+    { x: 0, y: canvasHeight }
+  ];
+  const holeRings = rects.map((rect) => [
+    { x: rect.left, y: rect.top },
+    { x: rect.left + rect.width, y: rect.top },
+    { x: rect.left + rect.width, y: rect.top + rect.height },
+    { x: rect.left, y: rect.top + rect.height }
+  ]);
+  const clipPath = new Path(
+    [outerRing, ...holeRings]
+      .map(
+        (ring) =>
+          ring
+            .map(
+              (point, index) =>
+                `${index === 0 ? "M" : "L"} ${roundPathNumber(point.x)} ${roundPathNumber(point.y)}`
+            )
+            .join(" ") + " Z"
+      )
+      .join(" "),
+    {
+      absolutePositioned: true,
+      evented: false,
+      fill: "#000000",
+      fillRule: "evenodd",
+      objectCaching: false,
+      selectable: false,
+      strokeWidth: 0
+    }
+  );
+
+  clipPath.set(contentEraseClipKindName, true);
+
+  return clipPath;
+}
+
 function syncCanvasStackingWithSummaries(
   canvas: ReturnType<typeof createFabricCanvas>,
   summaries: CanvasObjectSummary[],
@@ -3694,6 +4453,52 @@ function toFileSlug(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function createNextExportFilename(baseName: string, extension: string) {
+  const baseSlug = `${toFileSlug(baseName) || "canvas"}-neoform-pigments`;
+  const counter = getNextExportCounter(`${baseSlug}.${extension}`);
+
+  return `${baseSlug}-${String(counter).padStart(3, "0")}.${extension}`;
+}
+
+function getNextExportCounter(key: string) {
+  if (typeof localStorage === "undefined") {
+    return 1;
+  }
+
+  const counters = readExportCounters();
+  const nextCounter = (counters[key] ?? 0) + 1;
+
+  counters[key] = nextCounter;
+  localStorage.setItem(localExportCounterKey, JSON.stringify(counters));
+
+  return nextCounter;
+}
+
+function readExportCounters() {
+  if (typeof localStorage === "undefined") {
+    return {};
+  }
+
+  try {
+    const counters = JSON.parse(localStorage.getItem(localExportCounterKey) ?? "{}");
+
+    if (!counters || typeof counters !== "object" || Array.isArray(counters)) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(counters).filter(
+        (entry): entry is [string, number] =>
+          typeof entry[0] === "string" &&
+          typeof entry[1] === "number" &&
+          Number.isFinite(entry[1])
+      )
+    );
+  } catch {
+    return {};
+  }
 }
 
 type LineEditHandleButtonProps = {
@@ -6058,6 +6863,12 @@ function getCanvasCursor(
     )}") 25 45, pointer`;
   }
 
+  if (activeTool === "contentEraser") {
+    return `url("${createCursorDataUrl(
+      `<g fill="none" stroke="${ink}" stroke-linecap="square" stroke-linejoin="miter"><rect x="5" y="5" width="30" height="30" stroke-dasharray="4 3" stroke-width="2.4"/><path d="M12 12L28 28M28 12L12 28" stroke-width="3.2"/><path d="M2 38H38" stroke="${paper}" stroke-width="3.6"/><path d="M2 38H38" stroke="${ink}" stroke-width="1.8"/></g>`
+    )}") 20 20, crosshair`;
+  }
+
   if (cursorStyle === "target") {
     return `url("${createCursorDataUrl(
       '<g fill="none" stroke="#101010" stroke-width="3" stroke-linecap="square"><circle cx="20" cy="20" r="7"/><circle cx="20" cy="20" r="13"/><circle cx="20" cy="20" r="18"/><path d="M20 1V11M20 29V39M1 20H11M29 20H39"/></g>'
@@ -6327,7 +7138,7 @@ function syncDrawingMode(
 ) {
   if (!isDrawingTool(activeTool)) {
     canvas.isDrawingMode = false;
-    canvas.selection = activeTool !== "pan";
+    canvas.selection = activeTool !== "pan" && activeTool !== "contentEraser";
     return;
   }
 
@@ -7878,17 +8689,54 @@ function applyLayerState(
   summary: { name: string; visible: boolean; locked: boolean }
 ) {
   const canInteract = summary.visible && !summary.locked;
+  const isPassThroughMask = object.get("neoform-shape-kind") === "inverseSelection";
 
   object.set({
     name: summary.name,
     visible: summary.visible,
-    selectable: canInteract,
-    evented: canInteract,
-    hasControls: canInteract,
+    selectable: isPassThroughMask ? false : canInteract,
+    evented: isPassThroughMask ? false : canInteract,
+    hasControls: isPassThroughMask ? false : canInteract,
     lockMovementX: summary.locked,
     lockMovementY: summary.locked,
     lockScalingX: summary.locked,
     lockScalingY: summary.locked,
     lockRotation: summary.locked
   });
+}
+
+function syncInverseSelectionMaskInteractivity(
+  canvas: ReturnType<typeof createFabricCanvas>,
+  selectedIds: string[] = []
+) {
+  const selectedIdSet = new Set(selectedIds);
+
+  canvas.getObjects().forEach((object) => {
+    if (!isInverseSelectionMask(object)) {
+      return;
+    }
+
+    const objectId = String(object.get("id") ?? "");
+    const isLocked =
+      object.lockMovementX === true ||
+      object.lockMovementY === true ||
+      object.lockScalingX === true ||
+      object.lockScalingY === true ||
+      object.lockRotation === true;
+    const canEdit =
+      selectedIdSet.has(objectId) &&
+      object.visible !== false &&
+      !isLocked;
+
+    object.set({
+      evented: canEdit,
+      hasControls: canEdit,
+      hoverCursor: canEdit ? "move" : "default",
+      selectable: canEdit
+    });
+  });
+}
+
+function isInverseSelectionMask(object: FabricObject) {
+  return object.get("neoform-shape-kind") === "inverseSelection";
 }

@@ -79,24 +79,40 @@ docs/QA.md
 - Basic and library shapes.
 - Pigment palette inspired by Bauhaus, Chaos and Klein blue.
 - Vector-style texture presets, Bauhaus/pop art tramas and gradients.
-- Layer panel with duplicate, multi-select, bulk actions, groups, lock, order, rename and delete.
+- Layer panel with duplicate, multi-select, bulk actions, groups, lock, rename and delete.
+- Direct layer/object order controls: send to front, send to back, move up and move down from both Properties and Layers.
 - Blend modes and shadows per selected layer.
 - Local project save/open.
 - Project JSON import/export.
 - One primary `JPG sRGB` export button with configurable quality, current canvas size and active PPP settings.
-- JPG sRGB exports are also saved into the local `Obras finales` visual library.
+- JPG sRGB exports are generated as real downloadable files, numbered safely to avoid accidental overwrites, and also saved into the local `Obras finales` visual library.
+- Flatten/acoplar workflow for final raster output, with sharper artboard-size export rendering.
 - Advanced export foundation for SVG, proof PDF, all-artboards JPG/JPEG and package metadata.
 - Full-screen visual asset library with Bridge-style large preview and bottom filmstrip for compositions, pigments, pigment mixes, color palettes, textures and final works.
 - Visual assets are stored in IndexedDB, with palette extraction from imported images and palette/mix assets for reusable pigment combinations.
 - Grid, golden ratio and custom guides.
+- Horizontal, vertical and diagonal guides, including editable diagonal guide handles.
+- Inverse selection masks and full-canvas background/fill layers for composition workflows.
 - Zoom, fit and center controls.
 - Undo/redo.
 - Reusable saved compositions with rename, update, reorder, delete, JSON export and JSON import.
 - Pencil, nib and marker drawing tools with tablet pressure support.
 - Chainsaw cutting for simple shapes, text and complex clipped shapes with reusable cut-piece outlines.
+- Clean Delete tool for safe area-based erasing: hides only the selected area of touched objects without deleting the whole layer.
 - Animated cursor styles, currently CSS/SVG based and ready to evolve toward Anime.js for smoother trails and tool feedback.
 - Light, standard and dark color modes.
-- Driver.js guided tour foundation.
+- Driver.js guided tour for export, visual library, layers, textures, chainsaw, clean delete, blending and canvas tools.
+
+## Recent Product Notes
+
+- The app is now installable as a PWA from the production preview/build in supported browsers.
+- The visual library acts as a local mini-Bridge: imported images live in IndexedDB and can be reused from category folders.
+- The `JPG sRGB` export flow now creates usable files outside the app, saves a copy to `Obras finales`, and keeps downloads numbered.
+- Layer ordering has been simplified with visible `Front`, `Up`, `Down` and `Back` controls.
+- The new `Clean Delete` tool is intentionally different from the chainsaw:
+  - `Chainsaw Cut` splits/cuts vector geometry.
+  - `Clean Delete` hides a selected rectangular area while keeping the original layer intact.
+- Complex cut behavior is conservative by design: unsafe operations should warn or skip instead of producing broken shapes.
 
 ## Project Structure
 

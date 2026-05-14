@@ -4,6 +4,7 @@ import {
   FileUp,
   FolderOpen,
   Images,
+  Layers,
   Palette,
   Redo2,
   Save,
@@ -33,6 +34,7 @@ export function TopBar({ onOpenVisualAssets }: TopBarProps) {
   const requestRedo = useEditorStore((state) => state.requestRedo);
   const requestUndo = useEditorStore((state) => state.requestUndo);
   const requestExportJpeg = useEditorStore((state) => state.requestExportJpeg);
+  const requestFlattenLayers = useEditorStore((state) => state.requestFlattenLayers);
   const requestExportProjectJson = useEditorStore(
     (state) => state.requestExportProjectJson
   );
@@ -169,6 +171,15 @@ export function TopBar({ onOpenVisualAssets }: TopBarProps) {
         >
           <Images size={13} />
           Library
+        </button>
+        <button
+          type="button"
+          onClick={requestFlattenLayers}
+          className="ml-1 flex h-8 items-center gap-1 border-2 border-ink bg-bone px-2 text-[10px] font-black uppercase text-ink shadow-brutal-sm transition hover:-translate-y-0.5"
+          title="Acoplar capas visibles del lienzo activo en una sola capa"
+        >
+          <Layers size={13} />
+          Acoplar
         </button>
         <button
           type="button"

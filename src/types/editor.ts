@@ -24,6 +24,7 @@ export type EditorTool =
   | "nibStroke"
   | "markerStroke"
   | "gradientTool"
+  | "contentEraser"
   | "chainsawCut"
   | "lawnMower";
 
@@ -174,7 +175,10 @@ export type LayerActionType =
   | "toggle-lock"
   | "move-up"
   | "move-down"
-  | "rename";
+  | "move-front"
+  | "move-back"
+  | "rename"
+  | "flatten";
 
 export type LayerActionRequest = {
   action: LayerActionType;
