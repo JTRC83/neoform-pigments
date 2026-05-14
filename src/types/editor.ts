@@ -138,6 +138,16 @@ export type GradientToolSettings = {
   intensity: number;
 };
 
+export type ImageMaskShape =
+  | "none"
+  | "rectangle"
+  | "ellipse"
+  | "rounded"
+  | "triangle"
+  | "diamond"
+  | "hexagon"
+  | "star";
+
 export type PrintPresetId =
   | "screen"
   | "digital-proof"
@@ -290,6 +300,11 @@ export type SelectedObjectProperties = {
   lineStartWidth: number;
   lineEndWidth: number;
   fontFamily: TextFontFamily;
+  imageMaskShape: ImageMaskShape;
+  imageMaskScale: number;
+  imageMaskImageZoom: number;
+  imageMaskOffsetX: number;
+  imageMaskOffsetY: number;
   x: number;
   y: number;
   width: number;

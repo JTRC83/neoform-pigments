@@ -37,6 +37,7 @@ import { useEditorStore } from "../store/editorStore";
 import type {
   BlendMode,
   CanvasCursorStyle,
+  ImageMaskShape,
   PrintPresetId,
   ProfessionalExportSettings,
   ShadowPreset,
@@ -71,6 +72,16 @@ const cursorOptions: Array<{ label: string; value: CanvasCursorStyle }> = [
   { label: "Plane", value: "paperPlane" },
   { label: "Tattoo", value: "tapHand" },
   { label: "Pencil", value: "pencil" }
+];
+const imageMaskOptions: Array<{ label: string; value: ImageMaskShape }> = [
+  { label: "No mask", value: "none" },
+  { label: "Rectangle", value: "rectangle" },
+  { label: "Circle/Oval", value: "ellipse" },
+  { label: "Rounded", value: "rounded" },
+  { label: "Triangle", value: "triangle" },
+  { label: "Diamond", value: "diamond" },
+  { label: "Hexagon", value: "hexagon" },
+  { label: "Star", value: "star" }
 ];
 const blendModeHints: Record<BlendMode, string> = {
   "source-over": "Normal: la capa queda tal cual encima de las demás.",
@@ -402,6 +413,7 @@ export function RightPanel() {
   const selectedObjectUsesStrokeColor =
     selectedObjectIsLine || selectedObjectIsFreehand;
   const selectedObjectIsText = selectedObject?.type === "text";
+  const selectedObjectIsImage = selectedObject?.type === "image";
   const layers = [...activeCanvasObjects].reverse();
   const selectedLayerSet = new Set(selectedLayerIds);
   const selectedLayerActionIds =
@@ -981,6 +993,84 @@ export function RightPanel() {
                   className="mt-0.5 h-4 w-full accent-[#C06830]"
                 />
               </label>
+              {selectedObjectIsImage ? (
+                <div className="col-span-8 grid grid-cols-6 gap-1 border-2 border-ink bg-pollen p-1">
+                  <div className="col-span-2">
+                    <PropertySelectInput<ImageMaskShape>
+                      label="Image mask"
+                      options={imageMaskOptions}
+                      value={selectedObjectProperties.imageMaskShape}
+                      onChange={(imageMaskShape) =>
+                        requestSelectedObjectPropertyUpdate({ imageMaskShape })
+                      }
+                    />
+                  </div>
+                  <label className="col-span-2 text-[8px] font-black uppercase">
+                    Mask {Math.round(selectedObjectProperties.imageMaskScale * 100)}%
+                    <input
+                      type="range"
+                      min={0.18}
+                      max={3}
+                      step={0.02}
+                      value={selectedObjectProperties.imageMaskScale}
+                      onChange={(event) =>
+                        requestSelectedObjectPropertyUpdate({
+                          imageMaskScale: Number(event.currentTarget.value)
+                        })
+                      }
+                      className="mt-0.5 h-4 w-full accent-[rgb(var(--color-oxide))]"
+                    />
+                  </label>
+                  <label className="col-span-2 text-[8px] font-black uppercase">
+                    Image {Math.round(selectedObjectProperties.imageMaskImageZoom * 100)}%
+                    <input
+                      type="range"
+                      min={0.35}
+                      max={4}
+                      step={0.02}
+                      value={selectedObjectProperties.imageMaskImageZoom}
+                      onChange={(event) =>
+                        requestSelectedObjectPropertyUpdate({
+                          imageMaskImageZoom: Number(event.currentTarget.value)
+                        })
+                      }
+                      className="mt-0.5 h-4 w-full accent-[rgb(var(--color-mineral))]"
+                    />
+                  </label>
+                  <label className="col-span-3 text-[8px] font-black uppercase">
+                    Mask X {Math.round(selectedObjectProperties.imageMaskOffsetX * 100)}
+                    <input
+                      type="range"
+                      min={-0.8}
+                      max={0.8}
+                      step={0.02}
+                      value={selectedObjectProperties.imageMaskOffsetX}
+                      onChange={(event) =>
+                        requestSelectedObjectPropertyUpdate({
+                          imageMaskOffsetX: Number(event.currentTarget.value)
+                        })
+                      }
+                      className="mt-0.5 h-4 w-full accent-[rgb(var(--color-ink))]"
+                    />
+                  </label>
+                  <label className="col-span-3 text-[8px] font-black uppercase">
+                    Mask Y {Math.round(selectedObjectProperties.imageMaskOffsetY * 100)}
+                    <input
+                      type="range"
+                      min={-0.8}
+                      max={0.8}
+                      step={0.02}
+                      value={selectedObjectProperties.imageMaskOffsetY}
+                      onChange={(event) =>
+                        requestSelectedObjectPropertyUpdate({
+                          imageMaskOffsetY: Number(event.currentTarget.value)
+                        })
+                      }
+                      className="mt-0.5 h-4 w-full accent-[rgb(var(--color-ink))]"
+                    />
+                  </label>
+                </div>
+              ) : null}
               {selectedObjectIsLine ? (
                 <>
                   <PropertyNumberInput

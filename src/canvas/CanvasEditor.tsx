@@ -56,6 +56,7 @@ import type {
   EditorTool,
   GradientToolDirection,
   GradientToolSettings,
+  ImageMaskShape,
   ProfessionalExportSettings,
   SavedProject,
   SelectedObjectProperties,
@@ -178,6 +179,12 @@ const colorBaseFillName = "neoform-color-base-fill";
 const colorBaseStrokeName = "neoform-color-base-stroke";
 const pressureStrokeName = "neoform-pressure-stroke";
 const visualAssetIdName = "neoform-visual-asset-id";
+const imageSourceDataUrlName = "neoform-image-source";
+const imageMaskShapeName = "neoform-image-mask-shape";
+const imageMaskScaleName = "neoform-image-mask-scale";
+const imageMaskImageZoomName = "neoform-image-mask-image-zoom";
+const imageMaskOffsetXName = "neoform-image-mask-offset-x";
+const imageMaskOffsetYName = "neoform-image-mask-offset-y";
 const vectorCutPolygonName = "neoform-vector-cut-polygon";
 const vectorCutPolygonSpaceName = "neoform-vector-cut-polygon-space";
 const contentEraseRectsName = "neoform-content-erase-rects";
@@ -209,6 +216,12 @@ const customObjectProperties = [
   colorBaseFillName,
   colorBaseStrokeName,
   visualAssetIdName,
+  imageSourceDataUrlName,
+  imageMaskShapeName,
+  imageMaskScaleName,
+  imageMaskImageZoomName,
+  imageMaskOffsetXName,
+  imageMaskOffsetYName,
   vectorCutPolygonName,
   vectorCutPolygonSpaceName,
   contentEraseRectsName
@@ -3349,6 +3362,7 @@ async function addVisualAssetImageToCanvas(
     originY: "center"
   });
   image.set(visualAssetIdName, asset.id);
+  image.set(imageSourceDataUrlName, asset.dataUrl);
   image.scale(scale);
   applyLayerState(image, summary);
   canvas.add(image);
@@ -8406,6 +8420,7 @@ function syncSelectedObjectProperties(object?: FabricObject | null) {
     !isPressureStrokeObject(paintTarget);
   const lineWidths = getLineWidthsForObject(object);
   const textFontFamily = normalizeTextFontFamily(paintTarget.get("fontFamily"));
+  const imageMaskSettings = getImageMaskSettings(object);
 
   useEditorStore.getState().setSelectedObjectProperties({
     fill:
@@ -8427,6 +8442,11 @@ function syncSelectedObjectProperties(object?: FabricObject | null) {
     lineStartWidth: lineWidths.startWidth,
     lineEndWidth: lineWidths.endWidth,
     fontFamily: textFontFamily,
+    imageMaskShape: imageMaskSettings.shape,
+    imageMaskScale: imageMaskSettings.scale,
+    imageMaskImageZoom: imageMaskSettings.imageZoom,
+    imageMaskOffsetX: imageMaskSettings.offsetX,
+    imageMaskOffsetY: imageMaskSettings.offsetY,
     x: Math.round(object.left ?? 0),
     y: Math.round(object.top ?? 0),
     width: Math.round(object.getScaledWidth()),
@@ -8476,6 +8496,16 @@ function applyPropertiesToObject(
   }
 
   if (
+    properties.imageMaskShape ||
+    typeof properties.imageMaskScale === "number" ||
+    typeof properties.imageMaskImageZoom === "number" ||
+    typeof properties.imageMaskOffsetX === "number" ||
+    typeof properties.imageMaskOffsetY === "number"
+  ) {
+    applyImageMaskProperties(object, properties);
+  }
+
+  if (
     typeof properties.lineStartWidth === "number" ||
     typeof properties.lineEndWidth === "number"
   ) {
@@ -8509,6 +8539,227 @@ function applyPropertiesToObject(
 
   object.setCoords();
   object.dirty = true;
+}
+
+function getImageMaskSettings(object: FabricObject) {
+  return {
+    imageZoom: normalizePositiveNumber(object.get(imageMaskImageZoomName), 1),
+    offsetX: normalizeFiniteNumber(object.get(imageMaskOffsetXName), 0),
+    offsetY: normalizeFiniteNumber(object.get(imageMaskOffsetYName), 0),
+    scale: normalizePositiveNumber(object.get(imageMaskScaleName), 1),
+    shape: normalizeImageMaskShape(object.get(imageMaskShapeName))
+  };
+}
+
+function applyImageMaskProperties(
+  object: FabricObject,
+  properties: Partial<SelectedObjectProperties>
+) {
+  if (!isImageLikeObject(object)) {
+    return;
+  }
+
+  const current = getImageMaskSettings(object);
+  const nextShape = properties.imageMaskShape
+    ? normalizeImageMaskShape(properties.imageMaskShape)
+    : current.shape;
+  const nextScale = clampNumber(properties.imageMaskScale ?? current.scale, 0.18, 3);
+  const nextZoom = clampNumber(
+    properties.imageMaskImageZoom ?? current.imageZoom,
+    0.35,
+    4
+  );
+  const nextOffsetX = clampNumber(
+    properties.imageMaskOffsetX ?? current.offsetX,
+    -0.8,
+    0.8
+  );
+  const nextOffsetY = clampNumber(
+    properties.imageMaskOffsetY ?? current.offsetY,
+    -0.8,
+    0.8
+  );
+
+  if (typeof properties.imageMaskImageZoom === "number") {
+    const zoomRatio = nextZoom / Math.max(current.imageZoom, 0.01);
+    object.scaleX = (object.scaleX ?? 1) * zoomRatio;
+    object.scaleY = (object.scaleY ?? 1) * zoomRatio;
+  }
+
+  if (nextShape === "none") {
+    object.set({
+      clipPath: undefined,
+      dirty: true,
+      objectCaching: false
+    });
+    object.set(imageMaskShapeName, "none");
+    object.set(imageMaskScaleName, 1);
+    object.set(imageMaskImageZoomName, 1);
+    object.set(imageMaskOffsetXName, 0);
+    object.set(imageMaskOffsetYName, 0);
+    return;
+  }
+
+  object.set(imageMaskShapeName, nextShape);
+  object.set(imageMaskScaleName, nextScale);
+  object.set(imageMaskImageZoomName, nextZoom);
+  object.set(imageMaskOffsetXName, nextOffsetX);
+  object.set(imageMaskOffsetYName, nextOffsetY);
+  object.set({
+    clipPath: createImageMaskClipPath(object, {
+      imageZoom: nextZoom,
+      offsetX: nextOffsetX,
+      offsetY: nextOffsetY,
+      scale: nextScale,
+      shape: nextShape
+    }),
+    dirty: true,
+    objectCaching: true
+  });
+}
+
+function createImageMaskClipPath(
+  object: FabricObject,
+  settings: {
+    imageZoom: number;
+    offsetX: number;
+    offsetY: number;
+    scale: number;
+    shape: Exclude<ImageMaskShape, "none">;
+  }
+) {
+  const width = Math.max(1, Number(object.width ?? object.getScaledWidth() ?? 1));
+  const height = Math.max(1, Number(object.height ?? object.getScaledHeight() ?? 1));
+  const size = Math.min(width, height);
+  const maskScale = settings.scale / Math.max(settings.imageZoom, 0.01);
+  const left = settings.offsetX * width * 0.5;
+  const top = settings.offsetY * height * 0.5;
+  const baseProps = {
+    evented: false,
+    fill: "#000000",
+    left,
+    objectCaching: false,
+    originX: "center" as const,
+    originY: "center" as const,
+    scaleX: maskScale,
+    scaleY: maskScale,
+    selectable: false,
+    strokeWidth: 0,
+    top
+  };
+
+  if (settings.shape === "rectangle") {
+    return new Rect({
+      ...baseProps,
+      height,
+      width
+    });
+  }
+
+  if (settings.shape === "ellipse") {
+    return new Ellipse({
+      ...baseProps,
+      rx: width / 2,
+      ry: height / 2
+    });
+  }
+
+  if (settings.shape === "rounded") {
+    const radius = Math.min(width, height) * 0.18;
+
+    return new Rect({
+      ...baseProps,
+      height,
+      rx: radius,
+      ry: radius,
+      width
+    });
+  }
+
+  if (settings.shape === "triangle") {
+    return new Polygon(
+      [
+        { x: 0, y: -size / 2 },
+        { x: size / 2, y: size / 2 },
+        { x: -size / 2, y: size / 2 }
+      ],
+      baseProps
+    );
+  }
+
+  if (settings.shape === "diamond") {
+    return new Polygon(
+      [
+        { x: 0, y: -size / 2 },
+        { x: size / 2, y: 0 },
+        { x: 0, y: size / 2 },
+        { x: -size / 2, y: 0 }
+      ],
+      baseProps
+    );
+  }
+
+  if (settings.shape === "hexagon") {
+    return new Polygon(createRegularMaskPolygon(6, size / 2), baseProps);
+  }
+
+  return new Polygon(createStarMaskPolygon(size / 2, size * 0.22), baseProps);
+}
+
+function createRegularMaskPolygon(sides: number, radius: number) {
+  return Array.from({ length: sides }, (_, index) => {
+    const angle = -Math.PI / 2 + (index / sides) * Math.PI * 2;
+
+    return {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius
+    };
+  });
+}
+
+function createStarMaskPolygon(outerRadius: number, innerRadius: number) {
+  return Array.from({ length: 10 }, (_, index) => {
+    const angle = -Math.PI / 2 + (index / 10) * Math.PI * 2;
+    const radius = index % 2 === 0 ? outerRadius : innerRadius;
+
+    return {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius
+    };
+  });
+}
+
+function isImageLikeObject(object: FabricObject) {
+  return object instanceof FabricImage || getShapeKindForObject(object) === "image";
+}
+
+function normalizeImageMaskShape(value: unknown): ImageMaskShape {
+  const supported: ImageMaskShape[] = [
+    "none",
+    "rectangle",
+    "ellipse",
+    "rounded",
+    "triangle",
+    "diamond",
+    "hexagon",
+    "star"
+  ];
+
+  return supported.includes(value as ImageMaskShape)
+    ? (value as ImageMaskShape)
+    : "none";
+}
+
+function normalizePositiveNumber(value: unknown, fallback: number) {
+  const numberValue = Number(value);
+
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : fallback;
+}
+
+function normalizeFiniteNumber(value: unknown, fallback: number) {
+  const numberValue = Number(value);
+
+  return Number.isFinite(numberValue) ? numberValue : fallback;
 }
 
 function normalizeBlendMode(value: unknown): BlendMode {
